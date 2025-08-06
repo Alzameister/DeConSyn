@@ -1,4 +1,3 @@
-import os
 from pathlib import Path
 import pandas as pd
 
@@ -19,9 +18,6 @@ class DataTransformer:
     - `output_csv_dir` is treated as a directory: for single-file sources it writes '<source_name>.csv';
       for UCI it writes 'train.csv' and 'test.csv'.
     """
-    def __init__(self):
-        pass
-
     def transform(self, source, output_csv_dir=None, format_hint=None):
         """
         Read the dataset from `source` and return a pandas DataFrame or a dict of DataFrames.

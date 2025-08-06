@@ -43,3 +43,16 @@ class CTGANModel:
             pd.DataFrame: Generated synthetic samples.
         """
         return self.model.sample(num_samples)
+
+    def get_weights(self):
+        """
+        Get the weights of the trained CTGAN model.
+
+        Returns:
+            dict: Weights of the CTGAN model.
+        """
+        # TODO: Save only generator, or also discriminator? If both, are we allowed to make changes to the ctgan library (License)?
+        gen_weights = self.model._generator.state_dict()
+        return {
+            'generator': gen_weights
+        }

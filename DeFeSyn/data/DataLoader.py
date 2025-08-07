@@ -1,3 +1,4 @@
+import logging
 from pathlib import Path
 from pprint import pprint
 
@@ -91,6 +92,60 @@ class DatasetLoader:
         dfs = [self._dataframes[k] for k in keys]
         return pd.concat(dfs, ignore_index=ignore_index)
 
+    def split(self, n: int, save_path: str) -> tuple[str, str]:
+        """
+        Split the dataset into n parts and save them as separate resources in the manifest.
+        :param n: Number of parts to split into.
+        :param save_path: Directory to save the new resources.
+
+        :return: Tuple of paths to the new manifest and the directory where resources are saved.
+        """
+        if n <= 0:
+            raise ValueError("Number of splits must be greater than 0.")
+
+        save_path = Path(save_path).expanduser().resolve()
+        save_path.mkdir(parents=True, exist_ok=True)
+        manifest_path = save_path / 'manifest.yaml'
+        new_manifest = {
+            'name': self.manifest.get('name', 'split_dataset'),
+            'description': self.manifest.get('description', 'Split dataset resources'),
+            'resources': []
+        }
+
+        for resource_name, df in list(self._dataframes.items()):
+            # Ensure the DataFrame is not empty
+            if df.empty:
+                continue
+
+            # Shuffle the DataFrame
+            # TODO: Consider using a more robust shuffling method if needed
+            #df = df.sample(frac=1, random_state=42).reset_index(drop=True)
+
+            # Split into n parts
+            split_size = len(df) // n
+            for i in range(n):
+                start = i * split_size
+                end = (i + 1) * split_size if i < n - 1 else len(df)
+                part_df = df.iloc[start:end].copy()
+
+                # Create new resource name
+                part_name = f"{resource_name}-part-{i+1}"
+                part_path = Path(save_path) / f"{part_name}.{resource_name.split('-')[-1]}"
+                part_df.to_csv(part_path, index=False, header=False)
+                # Update the manifest with new resources
+                new_resource = {
+                    'name': part_name,
+                    'path': part_path.name,
+                    'missingValues': 'NaN',
+                    'schema': self.manifest['resources'][0]['schema']
+                }
+                new_manifest['resources'].append(new_resource)
+                with open(manifest_path, 'w', encoding='utf-8') as f:
+                    yaml.safe_dump(new_manifest, f, allow_unicode=True)
+                logging.info(f"Saved {part_name} to {part_path}")
+                logging.info(f"Updated manifest saved to {manifest_path}")
+
+        return str(save_path), 'manifest.yaml'
 
 if __name__ == "__main__":
     dataset_metadata_file = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/05_Data/adult/adult.yaml"

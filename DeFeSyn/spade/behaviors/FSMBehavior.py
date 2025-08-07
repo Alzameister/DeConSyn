@@ -32,13 +32,13 @@ class TrainingState(State):
         self.data = None
 
     async def run(self):
-        logging.info("Starting training state…")
+        self.agent.logger.info("Starting training state…")
         if not self.epochs:
             self.epochs = self.agent.epochs
         if not self.data:
             self.data = self.agent.data
         if 'train' not in self.data:
-            logging.error("No data available for training. Please check the data source.")
+            self.agent.logger.error("No data available for training. Please check the data source.")
             self.set_next_state(PULL_STATE)
             return
 
@@ -46,20 +46,20 @@ class TrainingState(State):
         discrete_cols = [col for col in data.columns
                          if data[col].dtype.name == "category"]
 
-        logging.info(f"Using {self.epochs} epochs for training.")
-        logging.info(f"Identified {len(discrete_cols)} discrete columns: {discrete_cols}")
+        self.agent.logger.info(f"Using {self.epochs} epochs for training.")
+        self.agent.logger.info(f"Identified {len(discrete_cols)} discrete columns: {discrete_cols}")
 
         ctgan = CTGANModel(
             data=data,
             discrete_columns=discrete_cols,
             epochs=self.epochs
         )
-        logging.info("Starting CTGAN training…")
+        self.agent.logger.info("Starting CTGAN training…")
         ctgan.train()
-        logging.info("CTGAN training complete.")
+        self.agent.logger.info("CTGAN training complete.")
         # TODO: Save model + weights for Consensus
         weights = ctgan.get_weights()
-        logging.info("Weights obtained from CTGAN model.")
+        self.agent.logger.info("Weights obtained from CTGAN model.")
 
         self.set_next_state(PULL_STATE)
 

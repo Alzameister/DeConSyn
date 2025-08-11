@@ -29,7 +29,7 @@ class TrainingState(State):
     def __init__(self):
         super().__init__()
         self.epochs = None
-        self.data = None
+        self.data: dict = None
 
     async def run(self):
         self.agent.logger.info("Starting training state…")
@@ -49,16 +49,25 @@ class TrainingState(State):
         self.agent.logger.info(f"Using {self.epochs} epochs for training.")
         self.agent.logger.info(f"Identified {len(discrete_cols)} discrete columns: {discrete_cols}")
 
-        ctgan = CTGANModel(
-            data=data,
-            discrete_columns=discrete_cols,
-            epochs=self.epochs
-        )
+        if not self.agent.model:
+            self.agent.logger.info("Initializing CTGAN model for training.")
+            self.agent.model = CTGANModel(
+                data=data,
+                discrete_columns=discrete_cols,
+                epochs=self.epochs
+            )
+
+        if self.agent.weights:
+            self.agent.logger.info("Loading weights into CTGAN model for warm start.")
+            self.agent.model.load_weights(self.agent.weights)
+            self.agent.logger.info("Weights loaded.")
+        else:
+            self.agent.logger.info("No model weights found. Performing cold start.")
+
         self.agent.logger.info("Starting CTGAN training…")
-        ctgan.train()
+        self.agent.model.train()
         self.agent.logger.info("CTGAN training complete.")
-        # TODO: Save model + weights for Consensus
-        weights = ctgan.get_weights()
+        self.agent.weights = self.agent.model.get_weights()
         self.agent.logger.info("Weights obtained from CTGAN model.")
 
         self.set_next_state(PULL_STATE)
@@ -66,7 +75,13 @@ class TrainingState(State):
 class PullState(State):
     # TODO: Docstring
     async def run(self):
-        # TODO: Implement
+        if self.agent.queue.empty():
+            self.agent.logger.info("No Data received to pull. Transitioning to PushState.")
+            self.set_next_state(PUSH_STATE)
+            return
+
+        # TODO: Implement logic to pull data from other agents
+
         self.set_next_state(PUSH_STATE)
 
 class PushState(State):

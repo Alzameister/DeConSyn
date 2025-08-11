@@ -56,3 +56,16 @@ class CTGANModel:
         return {
             'generator': gen_weights
         }
+
+    def load_weights(self, weights):
+        """
+        Load weights into the CTGAN model.
+
+        Args:
+            weights (dict): Weights to load into the model.
+        """
+        if 'generator' in weights:
+
+            self.model._generator.load_state_dict(weights['generator'])
+        else:
+            return

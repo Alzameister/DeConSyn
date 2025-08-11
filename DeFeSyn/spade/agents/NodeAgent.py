@@ -1,5 +1,6 @@
-import logging
 import asyncio
+import warnings
+from logging import Logger
 
 import spade
 from spade.agent import Agent
@@ -23,23 +24,25 @@ class NodeAgent(Agent):
     def __init__(self, jid: str, id: int, password: str, data_source: str, manifest_file_name: str, epochs: int=100):
         super().__init__(jid, password)
         self.id = id
-        self.logger = logging.getLogger(f"agent_{self.id}")
+        self.logger: Logger = logging.getLogger(f"agent_{self.id}")
         if not self.logger.hasHandlers():
             handler = logging.StreamHandler()
             formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
             handler.setFormatter(formatter)
             self.logger.addHandler(handler)
             self.logger.setLevel(logging.INFO)
-        self.queue = asyncio.Queue()
+        self.queue: asyncio.Queue = asyncio.Queue()
         self.data_source = data_source
         self.manifest_file_name = manifest_file_name
         self.epochs = epochs
+        self.model: CTGANModel = None  # Placeholder for the model instance
+        self.weights: dict = {} # Placeholder for model weights
 
         self.logger.info(f"Loading data from {self.data_source}/{self.manifest_file_name}...")
         self.loader = DatasetLoader(manifest_path=f"{self.data_source}/{self.manifest_file_name}")
         self.resource_names = self.loader.resource_names()
         self.logger.info(f"Available resources: {self.resource_names}")
-        self.data = {}
+        self.data: dict = {}
         for name in self.resource_names:
             if f"part-{self.id}" in name:
                 key = name.split("-")[1]
@@ -113,9 +116,9 @@ async def main():
     logging.info("Agent finished")
 
 if __name__ == "__main__":
+    warnings.filterwarnings("ignore", category=UserWarning)
     try:
         spade.run(main())
     except RuntimeError as e:
-        # Fallback for environments with a running event loop (like PyCharm)
         loop = asyncio.get_event_loop()
         loop.run_until_complete(main())

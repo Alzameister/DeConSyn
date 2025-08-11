@@ -6,11 +6,12 @@ from logging import Logger
 import spade
 from spade.agent import Agent
 from spade.message import Message
+from spade.template import Template
 
 from DeFeSyn.consensus.Consensus import Consensus
 from DeFeSyn.data.DataLoader import DatasetLoader
 from DeFeSyn.spade.behaviors.FSMBehavior import *
-from DeFeSyn.spade.behaviors.ReceiveBehavior import ReceiveBehavior
+from DeFeSyn.spade.behaviors.ReceiveBehavior import ReceiveBehavior, PushReceiveBehavior
 
 logging.basicConfig(
     level=logging.INFO,
@@ -37,6 +38,7 @@ class NodeAgent(Agent):
             self.logger.setLevel(logging.INFO)
 
         self.queue: asyncio.Queue = asyncio.Queue()
+        self.push_queue: asyncio.Queue = asyncio.Queue()
         self.data_source = data_source
         self.manifest_file_name = manifest_file_name
         self.epochs = epochs
@@ -68,7 +70,12 @@ class NodeAgent(Agent):
         self.presence.on_subscribed = lambda jid: asyncio.create_task(self._on_subscribed(jid))
         self.presence.on_unsubscribed = lambda jid: asyncio.create_task(self._on_unsubscribed(jid))
 
-        self.add_behaviour(ReceiveBehavior())
+        receive_template = Template(metadata={"performative": "inform", "type": "gossip"})
+        self.add_behaviour(ReceiveBehavior(), receive_template)
+
+        tpl = Template(metadata={"type": "gossip-reply"})
+        self.add_behaviour(PushReceiveBehavior(), tpl)
+
         self.logger.info("NodeAgent setup complete.")
 
     async def setup_fsm(self):

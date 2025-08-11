@@ -81,34 +81,33 @@ class PullState(State):
         if self.agent.queue.empty():
             self.agent.logger.info("No Data received to pull. Transitioning to PushState.")
         else:
-            # TODO: Implement logic to pull data from other agents
             self.agent.logger.info("Pulling data from other agents...")
-            # Pop from the queue
-            msg = await self.agent.queue.get()
-            if msg.get_metadata("performative") == "inform" and msg.get_metadata("type") == "gossip":
-                self.agent.logger.info(f"Processing model weights from {msg.sender}.")
-                received_weights = self.agent.model.decode(json.loads(msg.body))
-                self.agent.logger.info("Model weights decoded successfully.")
+            while not self.agent.queue.empty():
+                msg = await self.agent.queue.get()
+                if msg.get_metadata("performative") == "inform" and msg.get_metadata("type") == "gossip":
+                    self.agent.logger.info(f"Processing model weights from {msg.sender}.")
+                    received_weights = self.agent.model.decode(json.loads(msg.body))
+                    self.agent.logger.info("Model weights decoded successfully.")
 
-                # Perform consensus averaging with the received weights
-                self.agent.logger.info("Performing consensus averaging with received weights.")
-                new_weights = self.agent.weights = self.agent.consensus.average(
-                    x_i = self.agent.weights,
-                    x_j = received_weights
-                )
-                self.agent.weights = new_weights
-                self.agent.logger.info("Consensus averaging complete. New weights obtained.")
+                    # Perform consensus averaging with the received weights
+                    self.agent.logger.info("Performing consensus averaging with received weights.")
+                    new_weights = self.agent.weights = self.agent.consensus.average(
+                        x_i = self.agent.weights,
+                        x_j = received_weights
+                    )
+                    self.agent.weights = new_weights
+                    self.agent.logger.info("Consensus averaging complete. New weights obtained.")
 
-                # TODO: Send new weights back to sender or original weights before averaging?
-                self.agent.logger.info(f"Sending weights back to {msg.sender}...")
-                pkg = self.agent.model.encode()
-                response_msg = Message(to=str(msg.sender))
-                response_msg.set_metadata("performative", "inform")
-                response_msg.set_metadata("type", "gossip")
-                response_msg.set_metadata("content-type", "application/octet-stream+b64")
-                response_msg.body = json.dumps(pkg)
-                await self.send(response_msg)
-                self.agent.logger.info(f"Response sent to {msg.sender} with new weights.")
+                    # TODO: Send new weights back to sender or original weights before averaging?
+                    self.agent.logger.info(f"Sending weights back to {msg.sender}...")
+                    pkg = self.agent.model.encode()
+                    response_msg = Message(to=str(msg.sender))
+                    response_msg.set_metadata("performative", "inform")
+                    response_msg.set_metadata("type", "gossip-reply")
+                    response_msg.set_metadata("content-type", "application/octet-stream+b64")
+                    response_msg.body = json.dumps(pkg)
+                    await self.send(response_msg)
+                    self.agent.logger.info(f"Response sent to {msg.sender} with new weights.")
 
         self.set_next_state(PUSH_STATE)
 
@@ -131,6 +130,20 @@ class PushState(State):
 
         # TODO: Wait for response from the peer
         self.agent.logger.info(f"Waiting for response from {peer}...")
+        while self.agent.push_queue.empty():
+            await self.agent.sleep(0.1)
 
+        response_msg = await self.agent.push_queue.get()
+        self.agent.logger.info(f"Processing model weights from {response_msg.sender}.")
+        received_weights = self.agent.model.decode(json.loads(response_msg.body))
+        self.agent.logger.info("Model weights decoded successfully.")
+        # Perform consensus averaging with the received weights
+        self.agent.logger.info("Performing consensus averaging with received weights.")
+        new_weights = self.agent.weights = self.agent.consensus.average(
+            x_i=self.agent.weights,
+            x_j=received_weights
+        )
+        self.agent.weights = new_weights
+        self.agent.logger.info("Consensus averaging complete. New weights obtained.")
 
         self.set_next_state(TRAINING_STATE)

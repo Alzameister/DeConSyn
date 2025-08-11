@@ -1,4 +1,4 @@
-from spade.behaviour import CyclicBehaviour
+from spade.behaviour import CyclicBehaviour, OneShotBehaviour
 
 
 class ReceiveBehavior(CyclicBehaviour):
@@ -9,3 +9,10 @@ class ReceiveBehavior(CyclicBehaviour):
             await self.agent.queue.put(msg)
             self.agent.logger.debug("Message added to the queue for future processing.")
 
+
+class PushReceiveBehavior(OneShotBehaviour):
+    async def run(self):
+        msg = await self.receive(timeout=0.1)
+        if msg:
+            self.agent.logger.info(f"Received message from {msg.sender}")
+            await self.agent.push_queue.put(msg)

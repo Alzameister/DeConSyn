@@ -1,6 +1,9 @@
+import json
 import logging
+import random
 
 from spade.behaviour import FSMBehaviour, State
+from spade.message import Message
 
 from DeFeSyn.models.CTGAN.CTGAN import CTGANModel
 
@@ -31,6 +34,7 @@ class TrainingState(State):
         self.epochs = None
         self.data: dict = None
 
+    # TODO: Only train if we have received new weights?
     async def run(self):
         self.agent.logger.info("Starting training state…")
         if not self.epochs:
@@ -73,25 +77,60 @@ class TrainingState(State):
         self.set_next_state(PULL_STATE)
 
 class PullState(State):
-    # TODO: Docstring
     async def run(self):
         if self.agent.queue.empty():
             self.agent.logger.info("No Data received to pull. Transitioning to PushState.")
-            self.set_next_state(PUSH_STATE)
-            return
+        else:
+            # TODO: Implement logic to pull data from other agents
+            self.agent.logger.info("Pulling data from other agents...")
+            # Pop from the queue
+            msg = await self.agent.queue.get()
+            if msg.get_metadata("performative") == "inform" and msg.get_metadata("type") == "gossip":
+                self.agent.logger.info(f"Processing model weights from {msg.sender}.")
+                received_weights = self.agent.model.decode(json.loads(msg.body))
+                self.agent.logger.info("Model weights decoded successfully.")
 
-        # TODO: Implement logic to pull data from other agents
+                # Perform consensus averaging with the received weights
+                self.agent.logger.info("Performing consensus averaging with received weights.")
+                new_weights = self.agent.weights = self.agent.consensus.average(
+                    x_i = self.agent.weights,
+                    x_j = received_weights
+                )
+                self.agent.weights = new_weights
+                self.agent.logger.info("Consensus averaging complete. New weights obtained.")
+
+                # TODO: Send new weights back to sender or original weights before averaging?
+                self.agent.logger.info(f"Sending weights back to {msg.sender}...")
+                pkg = self.agent.model.encode()
+                response_msg = Message(to=str(msg.sender))
+                response_msg.set_metadata("performative", "inform")
+                response_msg.set_metadata("type", "gossip")
+                response_msg.set_metadata("content-type", "application/octet-stream+b64")
+                response_msg.body = json.dumps(pkg)
+                await self.send(response_msg)
+                self.agent.logger.info(f"Response sent to {msg.sender} with new weights.")
 
         self.set_next_state(PUSH_STATE)
 
 class PushState(State):
-    # TODO: Docstring
     async def run(self):
-        # TODO: Implement
-        self.set_next_state(TRAINING_STATE)
+        # TODO
+        contacts = self.agent.presence.get_contacts()
+        neighbors = [jid for jid, c in contacts.items() if c.is_available()]
+        peer = random.choice(neighbors)
 
-class ReceiveState(State):
-    # TODO: Docstring
-    async def run(self):
-        # TODO: Implement
-        raise NotImplementedError("Receive state is not implemented yet.")
+        self.agent.logger.info(f"Pushing model weights to {peer}...")
+        pkg = self.agent.model.encode()
+        msg = Message(to=str(peer))
+        msg.set_metadata("performative", "inform")
+        msg.set_metadata("type", "gossip")
+        msg.set_metadata("content-type", "application/octet-stream+b64")
+        msg.body = json.dumps(pkg)
+        await self.send(msg)
+        self.agent.logger.info(f"[{self.agent.jid}] message sent to {peer}")
+
+        # TODO: Wait for response from the peer
+        self.agent.logger.info(f"Waiting for response from {peer}...")
+
+
+        self.set_next_state(TRAINING_STATE)

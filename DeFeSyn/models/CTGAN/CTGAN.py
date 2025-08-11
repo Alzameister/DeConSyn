@@ -1,3 +1,4 @@
+import torch, io, gzip, base64, hashlib
 from ctgan import CTGAN
 
 class CTGANModel:
@@ -21,6 +22,7 @@ class CTGANModel:
             epochs=self.epochs,
             verbose=self.verbose
         )
+        self.weights = {}
 
 
     def train(self):
@@ -31,6 +33,7 @@ class CTGANModel:
             train_data=self.data,
             discrete_columns=self.discrete_columns
         )
+        self.weights = self.get_weights()
 
     def sample(self, num_samples):
         """
@@ -65,7 +68,42 @@ class CTGANModel:
             weights (dict): Weights to load into the model.
         """
         if 'generator' in weights:
-
             self.model._generator.load_state_dict(weights['generator'])
         else:
             return
+
+    def encode(self):
+        """Return a JSON-serializable package containing the weights."""
+        state_dict = self.model._generator.state_dict()
+        cooked = {}
+        for k, v in state_dict.items():
+            if torch.is_tensor(v):
+                t = v.detach().cpu()
+                if torch.is_floating_point(t):
+                    t = t.to(torch.float64)
+                cooked[k] = t
+            else:
+                cooked[k] = v
+
+        buffer = io.BytesIO()
+        torch.save(cooked, buffer)
+        raw = buffer.getvalue()
+        compressed = gzip.compress(raw)
+        encoded = base64.b64encode(compressed).decode('utf-8')
+        checksum = hashlib.sha256(compressed).hexdigest()
+        return {
+            'weights': encoded,
+            'checksum': checksum
+        }
+
+    def decode(self, encoded_state_dict):
+        """Decode the state_dict from a JSON-serializable package."""
+        encoded = encoded_state_dict['weights']
+        checksum = encoded_state_dict['checksum']
+        compressed = base64.b64decode(encoded.encode('utf-8'))
+        if hashlib.sha256(compressed).hexdigest() != checksum:
+            raise ValueError("Checksum mismatch. The weights may be corrupted.")
+
+        buffer = io.BytesIO(gzip.decompress(compressed))
+        state_dict = torch.load(buffer, map_location='cpu')
+        return {'generator': state_dict}

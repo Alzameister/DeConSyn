@@ -1,12 +1,8 @@
-import asyncio
-import json
 import warnings
 from logging import Logger
 
 import spade
 from spade.agent import Agent
-from spade.message import Message
-from spade.template import Template
 
 from DeFeSyn.consensus.Consensus import Consensus
 from DeFeSyn.data.DataLoader import DatasetLoader
@@ -17,6 +13,7 @@ logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
 )
+warnings.filterwarnings("ignore", category=UserWarning)
 
 # TODO: Refactor to a config file or environment variable
 ADULT_PATH = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/05_Data/adult"
@@ -42,7 +39,6 @@ class NodeAgent(Agent):
         self.data_source = data_source
         self.manifest_file_name = manifest_file_name
         self.epochs = epochs
-        self.model: CTGANModel = None  # Placeholder for the model instance
         self.weights: dict = {} # Placeholder for model weights
         self.consensus: Consensus = Consensus()
 
@@ -60,6 +56,7 @@ class NodeAgent(Agent):
         self.logger.info(f"Data loaded: {self.data['full']}")
         self.logger.info(f"Total length of all resources: {len(self.data)} rows")
         self.logger.info("All resources loaded and saved to agent's data attribute.")
+        self.model: CTGANModel = None  # Placeholder for the model instance
 
     async def setup(self):
         await super().setup()
@@ -72,9 +69,6 @@ class NodeAgent(Agent):
 
         receive_template = Template(metadata={"performative": "inform", "type": "gossip"})
         self.add_behaviour(ReceiveBehavior(), receive_template)
-
-        tpl = Template(metadata={"type": "gossip-reply"})
-        self.add_behaviour(PushReceiveBehavior(), tpl)
 
         self.logger.info("NodeAgent setup complete.")
 
@@ -107,22 +101,6 @@ class NodeAgent(Agent):
 
     async def _on_unsubscribed(self, jid):
         self.logger.info(f"[{self.jid}] unsubscribed by {jid}")
-
-    async def send_to_peer(self, peer_jid: str, payload: dict):
-        """
-        Send a message to a peer agent.
-        Args:
-            peer_jid (str): JID of the peer agent.
-            payload (dict): Payload to send.
-        """
-        self.logger.info(f"[{self.jid}] sending to {peer_jid}")
-        msg = Message(to=str(peer_jid))
-        msg.set_metadata("performative", "inform")
-        msg.set_metadata("type", "gossip")
-        msg.set_metadata("content-type", "application/octet-stream+b64")
-        msg.body = json.dumps(payload)  # or just a plain string
-        await self.send(msg)
-        self.logger.info(f"[{self.jid}] message sent to {peer_jid}")
 
 async def main():
     nr_agents = 2
@@ -179,7 +157,6 @@ async def main():
     logging.info("Agent finished")
 
 if __name__ == "__main__":
-    warnings.filterwarnings("ignore", category=UserWarning)
     try:
         spade.run(main())
     except RuntimeError as e:

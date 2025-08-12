@@ -55,9 +55,8 @@ class CTGANModel:
             dict: Weights of the CTGAN model.
         """
         # TODO: Save only generator, or also discriminator? If both, are we allowed to make changes to the ctgan library (License)?
-        gen_weights = self.model._generator.state_dict()
         return {
-            'generator': gen_weights
+            'generator': self.model._generator.state_dict()
         }
 
     def load_weights(self, weights):
@@ -74,7 +73,10 @@ class CTGANModel:
 
     def encode(self):
         """Return a JSON-serializable package containing the weights."""
-        state_dict = self.model._generator.state_dict()
+        try:
+            state_dict = self.weights['generator']
+        except KeyError:
+            return None
         cooked = {}
         for k, v in state_dict.items():
             if torch.is_tensor(v):

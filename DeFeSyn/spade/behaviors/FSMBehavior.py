@@ -1,9 +1,11 @@
+import asyncio
 import json
 import logging
 import random
 
-from spade.behaviour import FSMBehaviour, State
+from spade.behaviour import FSMBehaviour, State, OneShotBehaviour
 from spade.message import Message
+from spade.template import Template
 
 from DeFeSyn.models.CTGAN.CTGAN import CTGANModel
 
@@ -96,23 +98,24 @@ class PullState(State):
                         x_j = received_weights
                     )
                     self.agent.weights = new_weights
-                    self.agent.logger.info("Consensus averaging complete. New weights obtained.")
-
-                    # TODO: Send new weights back to sender or original weights before averaging?
-                    self.agent.logger.info(f"Sending weights back to {msg.sender}...")
-                    pkg = self.agent.model.encode()
-                    response_msg = Message(to=str(msg.sender))
-                    response_msg.set_metadata("performative", "inform")
-                    response_msg.set_metadata("type", "gossip-reply")
-                    response_msg.set_metadata("content-type", "application/octet-stream+b64")
-                    response_msg.body = json.dumps(pkg)
-                    await self.send(response_msg)
-                    self.agent.logger.info(f"Response sent to {msg.sender} with new weights.")
+            self.agent.logger.info("Consensus averaging complete. New weights obtained.")
 
         self.set_next_state(PUSH_STATE)
 
 class PushState(State):
     async def run(self):
+        class WaitResponse(OneShotBehaviour):
+            def __init__(self, fut):
+                super().__init__()
+                self.fut = fut
+
+            async def run(self):
+                future = await self.receive(timeout=15.0)
+                self.fut.set_result(future)
+
+        fut = asyncio.get_running_loop().create_future()
+        template = Template(metadata={"performative": "inform", "type": "gossip-reply"})
+        self.agent.add_behaviour(WaitResponse(fut), template)
         # TODO
         contacts = self.agent.presence.get_contacts()
         neighbors = [jid for jid, c in contacts.items() if c.is_available()]
@@ -130,10 +133,13 @@ class PushState(State):
 
         # TODO: Wait for response from the peer
         self.agent.logger.info(f"Waiting for response from {peer}...")
-        while self.agent.push_queue.empty():
-            await self.agent.sleep(0.1)
+        reply = await fut
+        if reply is None:
+            self.agent.logger.warning(f"No response received from {peer}.")
+            self.set_next_state(TRAINING_STATE)
+            return
+        response_msg = reply
 
-        response_msg = await self.agent.push_queue.get()
         self.agent.logger.info(f"Processing model weights from {response_msg.sender}.")
         received_weights = self.agent.model.decode(json.loads(response_msg.body))
         self.agent.logger.info("Model weights decoded successfully.")

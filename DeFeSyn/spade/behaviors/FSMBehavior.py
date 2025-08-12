@@ -7,7 +7,7 @@ from spade.behaviour import FSMBehaviour, State, OneShotBehaviour
 from spade.message import Message
 from spade.template import Template
 
-from DeFeSyn.models.CTGAN.CTGAN import CTGANModel
+from DeFeSyn.models.CTGAN.wrapper import CTGANModel
 
 TRAINING_STATE = "TRAINING_STATE"
 PULL_STATE = "PULL_STATE"
@@ -36,7 +36,6 @@ class TrainingState(State):
         self.epochs = None
         self.data: dict = None
 
-    # TODO: Only train if we have received new weights?
     async def run(self):
         self.agent.logger.info("Starting training state…")
         if not self.epochs:
@@ -58,6 +57,7 @@ class TrainingState(State):
         if not self.agent.model:
             self.agent.logger.info("Initializing CTGAN model for training.")
             self.agent.model = CTGANModel(
+                full_data=self.agent.full_data,
                 data=data,
                 discrete_columns=discrete_cols,
                 epochs=self.epochs
@@ -73,6 +73,7 @@ class TrainingState(State):
         self.agent.logger.info("Starting CTGAN training…")
         self.agent.model.train()
         self.agent.logger.info("CTGAN training complete.")
+        # TODO: Reporting of metrics
         self.agent.weights = self.agent.model.get_weights()
         self.agent.logger.info("Weights obtained from CTGAN model.")
 
@@ -120,6 +121,7 @@ class PushState(State):
         contacts = self.agent.presence.get_contacts()
         neighbors = [jid for jid, c in contacts.items() if c.is_available()]
         peer = random.choice(neighbors)
+        await asyncio.sleep(random.uniform(0.5, 1.5))
 
         self.agent.logger.info(f"Pushing model weights to {peer}...")
         pkg = self.agent.model.encode()

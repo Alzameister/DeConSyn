@@ -28,8 +28,11 @@ class Consensus:
             # Assuming x_i and x_j are dictionaries with 'generator' key containing the weights
             gen_i = x_i['generator']
             gen_j = x_j['generator']
+            dis_i = x_i['discriminator']
+            dis_j = x_j['discriminator']
             averaged_weights = {
-                'generator': {key: value + self.learning_factor * (gen_j[key] - value) for key, value in gen_i.items()}
+                'generator': {key: value + self.learning_factor * (gen_j[key] - value) for key, value in gen_i.items()},
+                'discriminator': {key: value + self.learning_factor * (dis_j[key] - value) for key, value in dis_i.items()}
             }
             return averaged_weights
         else:

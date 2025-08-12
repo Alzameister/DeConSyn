@@ -1,6 +1,6 @@
 import warnings
 from logging import Logger
-
+import pandas as pd
 import spade
 from spade.agent import Agent
 
@@ -23,7 +23,7 @@ class NodeAgent(Agent):
     """
     NodeAgent is an agent that implements a finite state machine (FSM) to run a Decentralized Federated Learning (DeFeSyn) framework.
     """
-    def __init__(self, jid: str, id: int, password: str, data_source: str, manifest_file_name: str, epochs: int=100):
+    def __init__(self, jid: str, id: int, password: str, full_data: pd.DataFrame, data_source: str, manifest_file_name: str, epochs: int=100):
         super().__init__(jid, password)
         self.id = id
         self.logger: Logger = logging.getLogger(f"agent_{self.id}")
@@ -46,6 +46,8 @@ class NodeAgent(Agent):
         self.loader = DatasetLoader(manifest_path=f"{self.data_source}/{self.manifest_file_name}")
         self.resource_names = self.loader.resource_names()
         self.logger.info(f"Available resources: {self.resource_names}")
+
+        self.full_data = full_data
         self.data: dict = {}
         for name in self.resource_names:
             if f"part-{self.id}" in name:
@@ -56,7 +58,12 @@ class NodeAgent(Agent):
         self.logger.info(f"Data loaded: {self.data['full']}")
         self.logger.info(f"Total length of all resources: {len(self.data)} rows")
         self.logger.info("All resources loaded and saved to agent's data attribute.")
+
         self.model: CTGANModel = None  # Placeholder for the model instance
+        self.loss = {
+            "Generator": [],
+            "Discriminator": []
+        }
 
     async def setup(self):
         await super().setup()
@@ -108,6 +115,7 @@ async def main():
     data_dir = f"{ADULT_PATH}/{nr_agents}"
     logging.info(f"Splitting dataset into {nr_agents} parts...")
     loader = DatasetLoader(manifest_path=f"{ADULT_PATH}/{ADULT_MANIFEST}")
+    full_data = loader.concat()
     data_dir, manifest_name = loader.split(nr_agents, save_path=data_dir)
 
     logging.info("Starting NodeAgents...")
@@ -115,6 +123,7 @@ async def main():
         jid="agent1@localhost",
         id=1,
         password="password",
+        full_data=full_data,
         data_source=data_dir,
         manifest_file_name=manifest_name,
         epochs=epochs
@@ -123,6 +132,7 @@ async def main():
         jid="agent2@localhost",
         id=2,
         password="password",
+        full_data=full_data,
         data_source=data_dir,
         manifest_file_name=manifest_name,
         epochs=epochs
@@ -134,7 +144,7 @@ async def main():
     )
     logging.info("All Agents started")
 
-    agent_1.presence.subscribe("agent2@localhost"),
+    agent_1.presence.subscribe("agent2@localhost")
     agent_2.presence.subscribe("agent1@localhost")
     logging.info("Agents subscribed to each other")
 

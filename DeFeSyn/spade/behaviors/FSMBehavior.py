@@ -3,6 +3,7 @@ import json
 import logging
 import random
 
+import pandas as pd
 from spade.behaviour import FSMBehaviour, State, OneShotBehaviour
 from spade.message import Message
 from spade.template import Template
@@ -73,7 +74,9 @@ class TrainingState(State):
         self.agent.logger.info("Starting CTGAN training…")
         self.agent.model.train()
         self.agent.logger.info("CTGAN training complete.")
-        # TODO: Reporting of metrics
+        # TODO: Saving of metrics
+        # TODO: Save loss values based on FSM epochs --> I.e. save loss values after each epoch while training, for each time FSM is in TRAINING_STATE
+        self.agent.loss_values = self.agent.model.model.loss_values
         self.agent.weights = self.agent.model.get_weights()
         self.agent.logger.info("Weights obtained from CTGAN model.")
 

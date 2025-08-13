@@ -20,7 +20,7 @@ class DatasetLoader:
         with open(manifest_file, 'r', encoding='utf-8') as f:
             self.manifest = yaml.safe_load(f)
 
-        self._dataframes = {}
+        self._dataframes: dict[str, pd.DataFrame] = {}
         # Common missing values
         missing_values = self.manifest.get('resources', [])[0] \
             .get('schema', {}).get('missingValues', [])
@@ -119,7 +119,7 @@ class DatasetLoader:
 
             # Shuffle the DataFrame
             # TODO: Consider using a more robust shuffling method if needed
-            #df = df.sample(frac=1, random_state=42).reset_index(drop=True)
+            df = df.sample(frac=1, random_state=42).reset_index(drop=True)
 
             # Split into n parts
             split_size = len(df) // n
@@ -148,7 +148,7 @@ class DatasetLoader:
         return str(save_path), 'manifest.yaml'
 
 if __name__ == "__main__":
-    dataset_metadata_file = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/05_Data/adult/adult.yaml"
+    dataset_metadata_file = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/05_Data/adult/manifest.yaml"
     loader = DatasetLoader(manifest_path=dataset_metadata_file)
     print("Available resources:")
     pprint(loader.resource_names())

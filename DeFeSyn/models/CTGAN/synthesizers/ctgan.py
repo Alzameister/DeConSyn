@@ -321,6 +321,8 @@ class CTGAN(BaseSynthesizer):
         """Fit the CTGAN Synthesizer models to the training data.
 
         Args:
+            full_data (numpy.ndarray or pandas.DataFrame):
+                Full Data. It must be a 2-dimensional numpy array or a pandas.DataFrame.
             train_data (numpy.ndarray or pandas.DataFrame):
                 Training Data. It must be a 2-dimensional numpy array or a pandas.DataFrame.
             discrete_columns (list-like):
@@ -379,7 +381,7 @@ class CTGAN(BaseSynthesizer):
         mean = torch.zeros(self._batch_size, self._embedding_dim, device=self._device)
         std = mean + 1
 
-        self.loss_values = pd.DataFrame(columns=['Epoch', 'Generator Loss', 'Distriminator Loss'])
+        self.loss_values = pd.DataFrame(columns=['Epoch', 'Generator Loss', 'Discriminator Loss'])
 
         epoch_iterator = tqdm(range(epochs), disable=(not self._verbose))
         if self._verbose:

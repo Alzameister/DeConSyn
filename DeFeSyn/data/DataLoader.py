@@ -147,6 +147,36 @@ class DatasetLoader:
 
         return str(save_path), 'manifest.yaml'
 
+    def get_train(self):
+        """
+        Get the training DataFrames from the manifest.
+        """
+        if not self.manifest.get('resources'):
+            raise ValueError("No resources found in the manifest.")
+        train_dfs = {}
+        for resource in self.manifest['resources']:
+            if 'train' in resource['name']:
+                name = resource['name']
+                train_dfs[name] = self.get(name)
+        if not train_dfs:
+            return pd.DataFrame()
+        return pd.concat(train_dfs.values(), ignore_index=True)
+
+    def get_test(self):
+        """
+        Get the test DataFrames from the manifest.
+        """
+        if not self.manifest.get('resources'):
+            raise ValueError("No resources found in the manifest.")
+        test_dfs = {}
+        for resource in self.manifest['resources']:
+            if 'test' in resource['name']:
+                name = resource['name']
+                test_dfs[name] = self.get(name)
+        if not test_dfs:
+            return pd.DataFrame()
+        return pd.concat(test_dfs.values(), ignore_index=True)
+
 if __name__ == "__main__":
     dataset_metadata_file = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/05_Data/adult/manifest.yaml"
     loader = DatasetLoader(manifest_path=dataset_metadata_file)

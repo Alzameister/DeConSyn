@@ -43,6 +43,7 @@ class TrainingState(State):
             self.agent.logger.info("Maximum number of iterations reached. Exiting...")
             return
 
+        self.agent.logger.info(f"Starting FSM Iteration {self.agent.current_iteration}")
         self.agent.logger.info("Starting training state…")
         if not self.epochs:
             self.epochs = self.agent.epochs
@@ -63,7 +64,7 @@ class TrainingState(State):
         if not self.agent.model:
             self.agent.logger.info("Initializing CTGAN model for training.")
             self.agent.model = CTGANModel(
-                full_data=self.agent.full_data,
+                full_data=self.agent.full_train_data,
                 data=data,
                 discrete_columns=discrete_cols,
                 epochs=self.epochs
@@ -119,7 +120,7 @@ class PushState(State):
                 self.fut = fut
 
             async def run(self):
-                future = await self.receive(timeout=15.0)
+                future = await self.receive(timeout=30.0)
                 self.fut.set_result(future)
 
         fut = asyncio.get_running_loop().create_future()
@@ -141,25 +142,24 @@ class PushState(State):
         await self.send(msg)
         self.agent.logger.info(f"[{self.agent.jid}] message sent to {peer}")
 
-        # TODO: Wait for response from the peer
         self.agent.logger.info(f"Waiting for response from {peer}...")
         reply = await fut
         if reply is None:
+            # TODO: Handle timeout or no response on other side?
             self.agent.logger.warning(f"No response received from {peer}.")
-            self.set_next_state(TRAINING_STATE)
-            return
-        response_msg = reply
+        else:
+            response_msg = reply
 
-        self.agent.logger.info(f"Processing model weights from {response_msg.sender}.")
-        received_weights = self.agent.model.decode(json.loads(response_msg.body))
-        self.agent.logger.info("Model weights decoded successfully.")
-        # Perform consensus averaging with the received weights
-        self.agent.logger.info("Performing consensus averaging with received weights.")
-        new_weights = self.agent.weights = self.agent.consensus.average(
-            x_i=self.agent.weights,
-            x_j=received_weights
-        )
-        self.agent.weights = new_weights
-        self.agent.logger.info("Consensus averaging complete. New weights obtained.")
+            self.agent.logger.info(f"Processing model weights from {response_msg.sender}.")
+            received_weights = self.agent.model.decode(json.loads(response_msg.body))
+            self.agent.logger.info("Model weights decoded successfully.")
+            # Perform consensus averaging with the received weights
+            self.agent.logger.info("Performing consensus averaging with received weights.")
+            new_weights = self.agent.weights = self.agent.consensus.average(
+                x_i=self.agent.weights,
+                x_j=received_weights
+            )
+            self.agent.weights = new_weights
+            self.agent.logger.info("Consensus averaging complete. New weights obtained.")
 
         self.set_next_state(TRAINING_STATE)

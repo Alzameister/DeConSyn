@@ -14,17 +14,16 @@ class ReceiveBehavior(CyclicBehaviour):
             # Send weights back to the sender
             self.agent.logger.info(f"Sending weights back to {msg.sender}...")
             pkg = self.agent.model.encode()
-            if not pkg:
+            if pkg:
+                response_msg = msg.make_reply()
+                response_msg.set_metadata("performative", "inform")
+                response_msg.set_metadata("type", "gossip-reply")
+                response_msg.set_metadata("content-type", "application/octet-stream+b64")
+                response_msg.body = json.dumps(pkg)
+                await self.send(response_msg)
+                self.agent.logger.info(f"Response sent to {msg.sender} with new weights.")
+            else:
                 self.agent.logger.warning("No weights to send back. Need to complete training first")
-                return
-
-            response_msg = msg.make_reply()
-            response_msg.set_metadata("performative", "inform")
-            response_msg.set_metadata("type", "gossip-reply")
-            response_msg.set_metadata("content-type", "application/octet-stream+b64")
-            response_msg.body = json.dumps(pkg)
-            await self.send(response_msg)
-            self.agent.logger.info(f"Response sent to {msg.sender} with new weights.")
 
 class PushReceiveBehavior(OneShotBehaviour):
     async def run(self):

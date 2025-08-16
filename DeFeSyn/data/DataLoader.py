@@ -129,7 +129,7 @@ class DatasetLoader:
                 part_df = df.iloc[start:end].copy()
 
                 # Create new resource name
-                part_name = f"{resource_name}-part-{i+1}"
+                part_name = f"{resource_name}-part-{i}"
                 part_path = Path(save_path) / f"{part_name}.{resource_name.split('-')[-1]}"
                 part_df.to_csv(part_path, index=False, header=False)
                 # Update the manifest with new resources

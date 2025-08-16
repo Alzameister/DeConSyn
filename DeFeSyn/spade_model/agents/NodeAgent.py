@@ -24,7 +24,17 @@ class NodeAgent(Agent):
     """
     NodeAgent is an agent that implements a finite state machine (FSM) to run a Decentralized Federated Learning (DeFeSyn) framework.
     """
-    def __init__(self, jid: str, id: int, password: str, full_data: pd.DataFrame, data_source: str, manifest_file_name: str, epochs: int=100, max_iterations: int=10):
+    def __init__(self,
+                 jid: str,
+                 id: int,
+                 password: str,
+                 full_data: pd.DataFrame,
+                 full_train_data: pd.DataFrame,
+                 full_test_data: pd.DataFrame,
+                 data_source: str,
+                 manifest_file_name: str,
+                 epochs: int=100,
+                 max_iterations: int=10):
         super().__init__(jid, password)
         self.id = id
         self.logger: Logger = logging.getLogger(f"agent_{self.id}")
@@ -52,6 +62,8 @@ class NodeAgent(Agent):
 
         # TODO: Set full_training_data for CTGAN transformer
         self.full_data = full_data
+        self.full_train_data = full_train_data
+        self.full_test_data = full_test_data
         self.data: dict = {}
         for name in self.resource_names:
             if f"part-{self.id}" in name:
@@ -101,7 +113,7 @@ class NodeAgent(Agent):
 
     async def _on_subscribe(self, jid):
         self.logger.info(f"[{self.jid}] got subscribe from {jid}")
-        await self.presence.approve_subscription(jid)
+        self.presence.approve_subscription(jid)
         await self.presence.subscribe(jid)  # ensure mutual subscription
 
     async def _on_subscribed(self, jid):
@@ -113,17 +125,20 @@ class NodeAgent(Agent):
 async def main():
     nr_agents = 2
     epochs = 1
-    max_iterations = 10
+    max_iterations = 2
     data_dir = f"{ADULT_PATH}/{nr_agents}"
     logging.info(f"Splitting dataset into {nr_agents} parts...")
     loader = DatasetLoader(manifest_path=f"{ADULT_PATH}/{ADULT_MANIFEST}")
     full_data = loader.concat()
+    train = loader.get_train()
+    test = loader.get_test()
     data_dir, manifest_name = loader.split(nr_agents, save_path=data_dir)
 
     logging.info("Starting NodeAgents...")
-    agent_1 = NodeAgent(jid="agent1@localhost", id=1, password="password", full_data=full_data, data_source=data_dir,
+    agent_1 = NodeAgent(jid="agent0@localhost", id=0, password="password", full_data=full_data, full_test_data=test, full_train_data=train,
+                        data_source=data_dir,
                         manifest_file_name=manifest_name, epochs=epochs, max_iterations=max_iterations)
-    agent_2 = NodeAgent(jid="agent2@localhost", id=2, password="password", full_data=full_data, data_source=data_dir,
+    agent_2 = NodeAgent(jid="agent1@localhost", id=1, password="password", full_data=full_data, full_test_data=test, full_train_data=train, data_source=data_dir,
                         manifest_file_name=manifest_name, epochs=epochs, max_iterations=max_iterations)
 
     await asyncio.gather(
@@ -132,9 +147,11 @@ async def main():
     )
     logging.info("All Agents started")
 
-    agent_1.presence.subscribe("agent2@localhost")
-    agent_2.presence.subscribe("agent1@localhost")
+    agent_1.presence.subscribe("agent1@localhost")
+    agent_2.presence.subscribe("agent0@localhost")
     logging.info("Agents subscribed to each other")
+
+    await asyncio.sleep(2)  # Wait for subscriptions to be established
 
     await asyncio.gather(
         agent_1.setup_fsm(),

@@ -102,11 +102,13 @@ class NodeAgent(Agent):
         fsm.add_state(name=TRAINING_STATE, state=TrainingState(), initial=True)
         fsm.add_state(name=PULL_STATE, state=PullState())
         fsm.add_state(name=PUSH_STATE, state=PushState())
+        fsm.add_state(name=FINAL_STATE, state=FinalState())
 
         fsm.add_transition(source=TRAINING_STATE, dest=PULL_STATE)
         fsm.add_transition(source=TRAINING_STATE, dest=PUSH_STATE)
         fsm.add_transition(source=PULL_STATE, dest=PUSH_STATE)
         fsm.add_transition(source=PUSH_STATE, dest=TRAINING_STATE)
+        fsm.add_transition(source=TRAINING_STATE, dest=FINAL_STATE)
 
         self.add_behaviour(fsm)
         self.logger.info("FSM setup complete.")

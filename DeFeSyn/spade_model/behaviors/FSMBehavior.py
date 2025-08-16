@@ -14,6 +14,7 @@ TRAINING_STATE = "TRAINING_STATE"
 PULL_STATE = "PULL_STATE"
 PUSH_STATE = "PUSH_STATE"
 RECEIVE_STATE = "RECEIVE_STATE"
+FINAL_STATE = "FINAL_STATE"
 
 class NodeFSMBehaviour(FSMBehaviour):
     """
@@ -41,52 +42,52 @@ class TrainingState(State):
         self.agent.current_iteration += 1
         if self.agent.current_iteration > self.agent.max_iterations:
             self.agent.logger.info("Maximum number of iterations reached. Exiting...")
-            return
-
-        self.agent.logger.info(f"Starting FSM Iteration {self.agent.current_iteration}")
-        self.agent.logger.info("Starting training state…")
-        if not self.epochs:
-            self.epochs = self.agent.epochs
-        if not self.data:
-            self.data = self.agent.data
-        if 'train' not in self.data:
-            self.agent.logger.error("No data available for training. Please check the data source.")
-            self.set_next_state(PULL_STATE)
-            return
-
-        data = self.data['train']
-        discrete_cols = [col for col in data.columns
-                         if data[col].dtype.name == "category"]
-
-        self.agent.logger.info(f"Using {self.epochs} epochs for training.")
-        self.agent.logger.info(f"Identified {len(discrete_cols)} discrete columns: {discrete_cols}")
-
-        if not self.agent.model:
-            self.agent.logger.info("Initializing CTGAN model for training.")
-            self.agent.model = CTGANModel(
-                full_data=self.agent.full_train_data,
-                data=data,
-                discrete_columns=discrete_cols,
-                epochs=self.epochs
-            )
-
-        if self.agent.weights:
-            self.agent.logger.info("Loading weights into CTGAN model for warm start.")
-            self.agent.model.load_weights(self.agent.weights)
-            self.agent.logger.info("Weights loaded.")
+            self.set_next_state(FINAL_STATE)
         else:
-            self.agent.logger.info("No model weights found. Performing cold start.")
+            self.agent.logger.info(f"Starting FSM Iteration {self.agent.current_iteration}")
+            self.agent.logger.info("Starting training state…")
+            if not self.epochs:
+                self.epochs = self.agent.epochs
+            if not self.data:
+                self.data = self.agent.data
+            if 'train' not in self.data:
+                self.agent.logger.error("No data available for training. Please check the data source.")
+                self.set_next_state(PULL_STATE)
+                return
 
-        self.agent.logger.info("Starting CTGAN training…")
-        self.agent.model.train()
-        self.agent.logger.info("CTGAN training complete.")
-        # TODO: Saving of metrics
-        # TODO: Save loss values based on FSM epochs --> I.e. save loss values after each epoch while training, for each time FSM is in TRAINING_STATE
-        self.agent.loss_values = self.agent.model.model.loss_values
-        self.agent.weights = self.agent.model.get_weights()
-        self.agent.logger.info("Weights obtained from CTGAN model.")
+            data = self.data['train']
+            discrete_cols = [col for col in data.columns
+                             if data[col].dtype.name == "category"]
 
-        self.set_next_state(PULL_STATE)
+            self.agent.logger.info(f"Using {self.epochs} epochs for training.")
+            self.agent.logger.info(f"Identified {len(discrete_cols)} discrete columns: {discrete_cols}")
+
+            if not self.agent.model:
+                self.agent.logger.info("Initializing CTGAN model for training.")
+                self.agent.model = CTGANModel(
+                    full_data=self.agent.full_train_data,
+                    data=data,
+                    discrete_columns=discrete_cols,
+                    epochs=self.epochs
+                )
+
+            if self.agent.weights:
+                self.agent.logger.info("Loading weights into CTGAN model for warm start.")
+                self.agent.model.load_weights(self.agent.weights)
+                self.agent.logger.info("Weights loaded.")
+            else:
+                self.agent.logger.info("No model weights found. Performing cold start.")
+
+            self.agent.logger.info("Starting CTGAN training…")
+            self.agent.model.train()
+            self.agent.logger.info("CTGAN training complete.")
+            # TODO: Saving of metrics
+            # TODO: Save loss values based on FSM epochs --> I.e. save loss values after each epoch while training, for each time FSM is in TRAINING_STATE
+            self.agent.loss_values = self.agent.model.model.loss_values
+            self.agent.weights = self.agent.model.get_weights()
+            self.agent.logger.info("Weights obtained from CTGAN model.")
+
+            self.set_next_state(PULL_STATE)
 
 class PullState(State):
     async def run(self):
@@ -163,3 +164,8 @@ class PushState(State):
             self.agent.logger.info("Consensus averaging complete. New weights obtained.")
 
         self.set_next_state(TRAINING_STATE)
+
+class FinalState(State):
+    async def run(self):
+        # TODO: Cleanup / Final Reporting?
+        self.agent.logger.info("FSM execution completed. Agent will stop now.")

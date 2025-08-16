@@ -38,6 +38,11 @@ class TrainingState(State):
         self.data: dict = None
 
     async def run(self):
+        self.agent.current_iteration += 1
+        if self.agent.current_iteration > self.agent.max_iterations:
+            self.agent.logger.info("Maximum number of iterations reached. Exiting...")
+            return
+
         self.agent.logger.info("Starting training state…")
         if not self.epochs:
             self.epochs = self.agent.epochs

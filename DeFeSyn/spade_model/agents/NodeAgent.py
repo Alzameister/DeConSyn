@@ -2,12 +2,13 @@ import warnings
 from logging import Logger
 import pandas as pd
 import spade
+import spade.agent
 from spade.agent import Agent
 
 from DeFeSyn.consensus.Consensus import Consensus
 from DeFeSyn.data.DataLoader import DatasetLoader
-from DeFeSyn.spade.behaviors.FSMBehavior import *
-from DeFeSyn.spade.behaviors.ReceiveBehavior import ReceiveBehavior, PushReceiveBehavior
+from DeFeSyn.spade_model.behaviors.FSMBehavior import *
+from DeFeSyn.spade_model.behaviors.ReceiveBehavior import ReceiveBehavior, PushReceiveBehavior
 
 logging.basicConfig(
     level=logging.INFO,
@@ -23,7 +24,7 @@ class NodeAgent(Agent):
     """
     NodeAgent is an agent that implements a finite state machine (FSM) to run a Decentralized Federated Learning (DeFeSyn) framework.
     """
-    def __init__(self, jid: str, id: int, password: str, full_data: pd.DataFrame, data_source: str, manifest_file_name: str, epochs: int=100):
+    def __init__(self, jid: str, id: int, password: str, full_data: pd.DataFrame, data_source: str, manifest_file_name: str, epochs: int=100, max_iterations: int=10):
         super().__init__(jid, password)
         self.id = id
         self.logger: Logger = logging.getLogger(f"agent_{self.id}")
@@ -39,6 +40,8 @@ class NodeAgent(Agent):
         self.data_source = data_source
         self.manifest_file_name = manifest_file_name
         self.epochs = epochs
+        self.max_iterations = max_iterations
+        self.current_iteration = 0
         self.weights: dict = {} # Placeholder for model weights
         self.consensus: Consensus = Consensus()
 
@@ -47,6 +50,7 @@ class NodeAgent(Agent):
         self.resource_names = self.loader.resource_names()
         self.logger.info(f"Available resources: {self.resource_names}")
 
+        # TODO: Set full_training_data for CTGAN transformer
         self.full_data = full_data
         self.data: dict = {}
         for name in self.resource_names:
@@ -60,10 +64,7 @@ class NodeAgent(Agent):
         self.logger.info("All resources loaded and saved to agent's data attribute.")
 
         self.model: CTGANModel = None  # Placeholder for the model instance
-        self.loss = {
-            "Generator": [],
-            "Discriminator": []
-        }
+        self.loss_values = pd.DataFrame(columns=['Epoch', 'Generator Loss', 'Discriminator Loss'])
 
     async def setup(self):
         await super().setup()
@@ -112,6 +113,7 @@ class NodeAgent(Agent):
 async def main():
     nr_agents = 2
     epochs = 1
+    max_iterations = 10
     data_dir = f"{ADULT_PATH}/{nr_agents}"
     logging.info(f"Splitting dataset into {nr_agents} parts...")
     loader = DatasetLoader(manifest_path=f"{ADULT_PATH}/{ADULT_MANIFEST}")
@@ -119,24 +121,10 @@ async def main():
     data_dir, manifest_name = loader.split(nr_agents, save_path=data_dir)
 
     logging.info("Starting NodeAgents...")
-    agent_1 = NodeAgent(
-        jid="agent1@localhost",
-        id=1,
-        password="password",
-        full_data=full_data,
-        data_source=data_dir,
-        manifest_file_name=manifest_name,
-        epochs=epochs
-    )
-    agent_2 = NodeAgent(
-        jid="agent2@localhost",
-        id=2,
-        password="password",
-        full_data=full_data,
-        data_source=data_dir,
-        manifest_file_name=manifest_name,
-        epochs=epochs
-    )
+    agent_1 = NodeAgent(jid="agent1@localhost", id=1, password="password", full_data=full_data, data_source=data_dir,
+                        manifest_file_name=manifest_name, epochs=epochs, max_iterations=max_iterations)
+    agent_2 = NodeAgent(jid="agent2@localhost", id=2, password="password", full_data=full_data, data_source=data_dir,
+                        manifest_file_name=manifest_name, epochs=epochs, max_iterations=max_iterations)
 
     await asyncio.gather(
         agent_1.start(auto_register=True),

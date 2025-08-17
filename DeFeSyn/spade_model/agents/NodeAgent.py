@@ -1,20 +1,14 @@
-import warnings
-from logging import Logger
-import pandas as pd
 import spade
 import spade.agent
+from loguru import logger
 from spade.agent import Agent
 
 from DeFeSyn.consensus.Consensus import Consensus
 from DeFeSyn.data.DataLoader import DatasetLoader
+from DeFeSyn.logging.logger import init_logging
 from DeFeSyn.spade_model.behaviors.FSMBehavior import *
-from DeFeSyn.spade_model.behaviors.ReceiveBehavior import ReceiveBehavior, PushReceiveBehavior
+from DeFeSyn.spade_model.behaviors.ReceiveBehavior import ReceiveBehavior
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s"
-)
-warnings.filterwarnings("ignore", category=UserWarning)
 
 # TODO: Refactor to a config file or environment variable
 ADULT_PATH = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/05_Data/adult"
@@ -34,33 +28,27 @@ class NodeAgent(Agent):
                  data_source: str,
                  manifest_file_name: str,
                  epochs: int=100,
-                 max_iterations: int=10):
+                 max_iterations: int=10,
+                 run_id: str | None = None
+             ):
         super().__init__(jid, password)
         self.id = id
-        self.logger: Logger = logging.getLogger(f"agent_{self.id}")
-        if not self.logger.hasHandlers():
-            handler = logging.StreamHandler()
-            formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(name)s: %(message)s")
-            handler.setFormatter(formatter)
-            self.logger.addHandler(handler)
-            self.logger.setLevel(logging.INFO)
-
-        self.queue: asyncio.Queue = asyncio.Queue()
-        self.push_queue: asyncio.Queue = asyncio.Queue()
+        self.run_id = run_id
         self.data_source = data_source
         self.manifest_file_name = manifest_file_name
         self.epochs = epochs
         self.max_iterations = max_iterations
         self.current_iteration = 0
-        self.weights: dict = {} # Placeholder for model weights
-        self.consensus: Consensus = Consensus()
 
-        self.logger.info(f"Loading data from {self.data_source}/{self.manifest_file_name}...")
+        self.log = logger.bind(node_id=id, jid=jid)
+        self.event = self.log.bind(stream="event")
+
+
+
+        self.log.info(f"Loading data from {self.data_source}/{self.manifest_file_name}...")
         self.loader = DatasetLoader(manifest_path=f"{self.data_source}/{self.manifest_file_name}")
         self.resource_names = self.loader.resource_names()
-        self.logger.info(f"Available resources: {self.resource_names}")
-
-        # TODO: Set full_training_data for CTGAN transformer
+        self.log.info(f"Available resources: {self.resource_names}")
         self.full_data = full_data
         self.full_train_data = full_train_data
         self.full_test_data = full_test_data
@@ -68,19 +56,24 @@ class NodeAgent(Agent):
         for name in self.resource_names:
             if f"part-{self.id}" in name:
                 key = name.split("-")[1]
-                logging.info(f"{key}: {len(self.loader.get(name))} rows")
+                self.log.info(f"{key}: {len(self.loader.get(name))} rows")
                 self.data[key] = self.loader.get(name)
         self.data['full'] = self.loader.concat()
-        self.logger.info(f"Data loaded: {self.data['full']}")
-        self.logger.info(f"Total length of all resources: {len(self.data)} rows")
-        self.logger.info("All resources loaded and saved to agent's data attribute.")
+        self.log.info(f"Data loaded: {self.data['full']}")
+        self.log.info(f"Total length of all resources: {len(self.data)} rows")
+        self.log.info("All resources loaded and saved to agent's data attribute.")
 
         self.model: CTGANModel = None  # Placeholder for the model instance
+        self.consensus: Consensus = Consensus()
+
+        self.queue: asyncio.Queue = asyncio.Queue()
+        self.push_queue: asyncio.Queue = asyncio.Queue()
+        self.weights: dict = {}  # Placeholder for model weights
         self.loss_values = pd.DataFrame(columns=['Epoch', 'Generator Loss', 'Discriminator Loss'])
 
     async def setup(self):
         await super().setup()
-        self.logger.info("Setting up NodeAgent...")
+        self.log.info("Setting up NodeAgent...")
 
         self.presence.set_available()
         self.presence.on_subscribe = lambda jid: asyncio.create_task(self._on_subscribe(jid))
@@ -90,14 +83,14 @@ class NodeAgent(Agent):
         receive_template = Template(metadata={"performative": "inform", "type": "gossip"})
         self.add_behaviour(ReceiveBehavior(), receive_template)
 
-        self.logger.info("NodeAgent setup complete.")
+        self.log.info("NodeAgent setup complete.")
 
     async def setup_fsm(self):
         """
         Set up the finite state machine (FSM) for the NodeAgent.
         This method initializes the FSM with the states and transitions required for the agent's operation.
         """
-        self.logger.info("Setting up FSM...")
+        self.log.info("Setting up FSM...")
         fsm = NodeFSMBehaviour()
         fsm.add_state(name=TRAINING_STATE, state=TrainingState(), initial=True)
         fsm.add_state(name=PULL_STATE, state=PullState())
@@ -111,32 +104,33 @@ class NodeAgent(Agent):
         fsm.add_transition(source=TRAINING_STATE, dest=FINAL_STATE)
 
         self.add_behaviour(fsm)
-        self.logger.info("FSM setup complete.")
+        self.log.info("FSM setup complete.")
 
     async def _on_subscribe(self, jid):
-        self.logger.info(f"[{self.jid}] got subscribe from {jid}")
+        self.log.info(f"[{self.jid}] got subscribe from {jid}")
         self.presence.approve_subscription(jid)
         await self.presence.subscribe(jid)  # ensure mutual subscription
 
     async def _on_subscribed(self, jid):
-        self.logger.info(f"[{self.jid}] subscription completed with {jid}")
+        self.log.info(f"[{self.jid}] subscription completed with {jid}")
 
     async def _on_unsubscribed(self, jid):
-        self.logger.info(f"[{self.jid}] unsubscribed by {jid}")
+        self.log.info(f"[{self.jid}] unsubscribed by {jid}")
 
 async def main():
+    run_id = init_logging(level="INFO")
     nr_agents = 2
     epochs = 1
     max_iterations = 2
     data_dir = f"{ADULT_PATH}/{nr_agents}"
-    logging.info(f"Splitting dataset into {nr_agents} parts...")
+    logger.info(f"Splitting dataset into {nr_agents} parts...")
     loader = DatasetLoader(manifest_path=f"{ADULT_PATH}/{ADULT_MANIFEST}")
     full_data = loader.concat()
     train = loader.get_train()
     test = loader.get_test()
     data_dir, manifest_name = loader.split(nr_agents, save_path=data_dir)
 
-    logging.info("Starting NodeAgents...")
+    logger.info("Starting NodeAgents...")
     agent_1 = NodeAgent(jid="agent0@localhost", id=0, password="password", full_data=full_data, full_test_data=test, full_train_data=train,
                         data_source=data_dir,
                         manifest_file_name=manifest_name, epochs=epochs, max_iterations=max_iterations)
@@ -147,11 +141,11 @@ async def main():
         agent_1.start(auto_register=True),
         agent_2.start(auto_register=True)
     )
-    logging.info("All Agents started")
+    logger.info("All Agents started")
 
     agent_1.presence.subscribe("agent1@localhost")
     agent_2.presence.subscribe("agent0@localhost")
-    logging.info("Agents subscribed to each other")
+    logger.info("Agents subscribed to each other")
 
     await asyncio.sleep(2)  # Wait for subscriptions to be established
 
@@ -159,19 +153,19 @@ async def main():
         agent_1.setup_fsm(),
         agent_2.setup_fsm()
     )
-    logging.info("FSM behaviors added")
+    logger.info("FSM behaviors added")
 
     await asyncio.gather(
         spade.wait_until_finished(agent_1),
         spade.wait_until_finished(agent_2)
     )
-    logging.info("Agents finished their tasks")
+    logger.info("Agents finished their tasks")
 
     await asyncio.gather(
         agent_2.stop(),
         agent_1.stop()
     )
-    logging.info("Agent finished")
+    logger.info("Agent finished")
 
 if __name__ == "__main__":
     try:

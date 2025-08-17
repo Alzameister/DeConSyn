@@ -1,4 +1,5 @@
 import json
+import uuid
 
 from spade.behaviour import CyclicBehaviour, OneShotBehaviour
 
@@ -7,27 +8,44 @@ class ReceiveBehavior(CyclicBehaviour):
     async def run(self):
         msg = await self.receive(timeout=0.1)
         if msg:
-            self.agent.logger.info(f"Received message from {msg.sender}")
+            msg_id = msg.get_metadata("msg_id") or f"in-{uuid.uuid4().hex[:6]}"
+            msg.set_metadata("msg_id", msg_id)
+            version = msg.get_metadata("version")
+            try:
+                msg_version = int(version) if version is not None else -1
+            except Exception:
+                msg_version = -1
+            sender = str(msg.sender)
             await self.agent.queue.put(msg)
-            self.agent.logger.debug("Message added to the queue for future processing.")
+            q_after = self.agent.queue.qsize()
+            self.agent.log.info("RECEIVE: from {} (id={}, ver={}) → queue={}", sender, msg_id, msg_version, q_after)
 
-            # Send weights back to the sender
-            self.agent.logger.info(f"Sending weights back to {msg.sender}...")
-            pkg = self.agent.model.encode()
+            # TODO: Structured RECEIVE event
+
+            # Respond
+            pkg = None
+            try:
+                pkg = self.agent.model.encode()
+            except Exception as e:
+                self.agent.log.warning("RESPOND: encode failed: {}", e)
+
+
             if pkg:
-                response_msg = msg.make_reply()
-                response_msg.set_metadata("performative", "inform")
-                response_msg.set_metadata("type", "gossip-reply")
-                response_msg.set_metadata("content-type", "application/octet-stream+b64")
-                response_msg.body = json.dumps(pkg)
-                await self.send(response_msg)
-                self.agent.logger.info(f"Response sent to {msg.sender} with new weights.")
-            else:
-                self.agent.logger.warning("No weights to send back. Need to complete training first")
+                resp = msg.make_reply()
+                resp.set_metadata("performative", "inform")
+                resp.set_metadata("type", "gossip-reply")
+                resp.set_metadata("content-type", "application/octet-stream+b64")
+                resp_id = f"resp-{msg_id}"
+                resp.set_metadata("msg_id", resp_id)
+                version_sent = str(getattr(self.agent, "last_committed_version", self.agent.current_iteration))
+                resp.set_metadata("version", version_sent)
+                resp.body = json.dumps(pkg)
+                await self.send(resp)
 
-class PushReceiveBehavior(OneShotBehaviour):
-    async def run(self):
-        msg = await self.receive(timeout=0.1)
-        if msg:
-            self.agent.logger.info(f"Received message from {msg.sender}")
-            await self.agent.push_queue.put(msg)
+                bytes_out = len(resp.body.encode("utf-8"))
+                self.agent.log.info("RESPOND_SEND: to {} (id={}, ver_sent={}, bytes={})",
+                                    sender, resp_id, version_sent, bytes_out)
+
+                # TODO: Structured RESPOND event
+            else:
+                self.agent.log.warning("RESPOND: no weights to send yet (train first)")

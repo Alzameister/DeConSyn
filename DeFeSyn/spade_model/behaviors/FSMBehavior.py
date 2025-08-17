@@ -1,6 +1,9 @@
 import asyncio
 import json
-import logging
+import time
+import uuid
+
+from loguru import logger
 import random
 
 import pandas as pd
@@ -23,10 +26,10 @@ class NodeFSMBehaviour(FSMBehaviour):
     It includes states for training, pulling, pushing, and receiving data.
     """
     async def on_start(self):
-        logging.info(f"FSM starting at initial state {self.current_state}")
+        self.agent.log.info(f"FSM starting at initial state {self.current_state}")
 
     async def on_end(self):
-        logging.info(f"FSM finished at state {self.current_state}")
+        self.agent.log.info(f"FSM finished at state {self.current_state}")
         await self.agent.stop()
 
 class TrainingState(State):
@@ -40,30 +43,26 @@ class TrainingState(State):
 
     async def run(self):
         self.agent.current_iteration += 1
+        it = self.agent.current_iteration
         if self.agent.current_iteration > self.agent.max_iterations:
-            self.agent.logger.info("Maximum number of iterations reached. Exiting...")
+            self.agent.log.info("Max iterations reached. Exiting…")
             self.set_next_state(FINAL_STATE)
         else:
-            self.agent.logger.info(f"Starting FSM Iteration {self.agent.current_iteration}")
-            self.agent.logger.info("Starting training state…")
-            if not self.epochs:
-                self.epochs = self.agent.epochs
-            if not self.data:
-                self.data = self.agent.data
+            self.agent.log.info(f"Starting FSM iteration {it} → TRAIN")
+            self.epochs = self.epochs or self.agent.epochs
+            self.data = self.data or self.agent.data
+
             if 'train' not in self.data:
-                self.agent.logger.error("No data available for training. Please check the data source.")
-                self.set_next_state(PULL_STATE)
-                return
+                self.agent.log.error("TRAIN: No training split in agent.data; Cannot proceed with training.")
+                self.set_next_state(FINAL_STATE)
 
             data = self.data['train']
-            discrete_cols = [col for col in data.columns
-                             if data[col].dtype.name == "category"]
+            discrete_cols = [c for c in data.columns if data[c].dtype.name == "category"]
 
-            self.agent.logger.info(f"Using {self.epochs} epochs for training.")
-            self.agent.logger.info(f"Identified {len(discrete_cols)} discrete columns: {discrete_cols}")
+            self.agent.log.info(f"TRAIN: CTGAN epochs={self.epochs} | discrete_cols={discrete_cols}")
 
             if not self.agent.model:
-                self.agent.logger.info("Initializing CTGAN model for training.")
+                self.agent.log.info("TRAIN: Init CTGAN model")
                 self.agent.model = CTGANModel(
                     full_data=self.agent.full_train_data,
                     data=data,
@@ -72,45 +71,55 @@ class TrainingState(State):
                 )
 
             if self.agent.weights:
-                self.agent.logger.info("Loading weights into CTGAN model for warm start.")
+                self.agent.log.info("TRAIN: Warm start: loading weights")
                 self.agent.model.load_weights(self.agent.weights)
-                self.agent.logger.info("Weights loaded.")
             else:
-                self.agent.logger.info("No model weights found. Performing cold start.")
+                self.agent.log.info("TRAIN: Cold start (no weights)")
 
-            self.agent.logger.info("Starting CTGAN training…")
+            t0 = time.perf_counter()
             self.agent.model.train()
-            self.agent.logger.info("CTGAN training complete.")
-            # TODO: Saving of metrics
-            # TODO: Save loss values based on FSM epochs --> I.e. save loss values after each epoch while training, for each time FSM is in TRAINING_STATE
+            ms = (time.perf_counter() - t0) * 1000.0
             self.agent.loss_values = self.agent.model.model.loss_values
             self.agent.weights = self.agent.model.get_weights()
-            self.agent.logger.info("Weights obtained from CTGAN model.")
+            self.agent.log.info(f"TRAIN done in {ms:.1f} ms; weights updated")
 
+            # TODO: Structured TRAIN event (last losses if available)
+
+            self.agent.log.info(f"TRAIN: iteration {it} completed -> transition PULL")
             self.set_next_state(PULL_STATE)
 
 class PullState(State):
     async def run(self):
         if self.agent.queue.empty():
-            self.agent.logger.info("No Data received to pull. Transitioning to PushState.")
+            self.agent.log.info("PULL: queue empty → transition PUSH")
         else:
-            self.agent.logger.info("Pulling data from other agents...")
+            it = self.agent.current_iteration
+            self.agent.log.info("PULL: processing queue…")
+            consumed = []
+            q_before = self.agent.queue.qsize()
             while not self.agent.queue.empty():
                 msg = await self.agent.queue.get()
                 if msg.get_metadata("performative") == "inform" and msg.get_metadata("type") == "gossip":
-                    self.agent.logger.info(f"Processing model weights from {msg.sender}.")
+                    self.agent.log.info(f"PULL: got weights from {msg.sender}")
                     received_weights = self.agent.model.decode(json.loads(msg.body))
-                    self.agent.logger.info("Model weights decoded successfully.")
 
                     # Perform consensus averaging with the received weights
-                    self.agent.logger.info("Performing consensus averaging with received weights.")
-                    new_weights = self.agent.weights = self.agent.consensus.average(
+                    self.agent.log.info("PULL: Consensus averaging")
+                    self.agent.weights = self.agent.weights = self.agent.consensus.average(
                         x_i = self.agent.weights,
                         x_j = received_weights
                     )
-                    self.agent.weights = new_weights
-            self.agent.logger.info("Consensus averaging complete. New weights obtained.")
+                    consumed.append({
+                        "neighbor": str(msg.sender),
+                        "msg_id": msg.get_metadata("msg_id"),
+                        "version": int(msg.get_metadata("version") or it)
+                    })
+            q_after = self.agent.queue.qsize()
+            self.agent.log.info(f"PULL: averaged {len(consumed)} updates (queue {q_before}→{q_after})")
 
+            # TODO: Structured PULL event
+
+        self.agent.log.info(f"PULL transition PUSH")
         self.set_next_state(PUSH_STATE)
 
 class PushState(State):
@@ -124,48 +133,54 @@ class PushState(State):
                 future = await self.receive(timeout=30.0)
                 self.fut.set_result(future)
 
+        it = self.agent.current_iteration
+
         fut = asyncio.get_running_loop().create_future()
         template = Template(metadata={"performative": "inform", "type": "gossip-reply"})
         self.agent.add_behaviour(WaitResponse(fut), template)
-        # TODO
+
         contacts = self.agent.presence.get_contacts()
         neighbors = [jid for jid, c in contacts.items() if c.is_available()]
         peer = random.choice(neighbors)
         await asyncio.sleep(random.uniform(0.5, 1.5))
 
-        self.agent.logger.info(f"Pushing model weights to {peer}...")
         pkg = self.agent.model.encode()
+        msg_id = f"{self.agent.id}-{it}-{uuid.uuid4().hex[:6]}"
+        version = str(it)
+
         msg = Message(to=str(peer))
         msg.set_metadata("performative", "inform")
         msg.set_metadata("type", "gossip")
         msg.set_metadata("content-type", "application/octet-stream+b64")
+        msg.set_metadata("msg_id", msg_id)
+        msg.set_metadata("version", version)
         msg.body = json.dumps(pkg)
-        await self.send(msg)
-        self.agent.logger.info(f"[{self.agent.jid}] message sent to {peer}")
 
-        self.agent.logger.info(f"Waiting for response from {peer}...")
+        self.agent.log.info(f"PUSH: send → {peer}")
+        await self.send(msg)
+
+        # TODO: Structured PUSH event
+
+        self.agent.log.info(f"Waiting for RESPOND from {peer}")
         reply = await fut
         if reply is None:
             # TODO: Handle timeout or no response on other side?
-            self.agent.logger.warning(f"No response received from {peer}.")
+            self.agent.log.warning(f"No RESPOND from {peer}")
+            # TODO: Structured RESPONSE event
         else:
-            response_msg = reply
+            self.agent.log.info(f"RESPOND from {reply.sender}")
+            received_weights = self.agent.model.decode(json.loads(reply.body))
+            self.agent.weights = self.agent.consensus.average(x_i=self.agent.weights, x_j=received_weights)
+            self.agent.log.info(f"RESPOND: weights updated from {reply.sender}")
 
-            self.agent.logger.info(f"Processing model weights from {response_msg.sender}.")
-            received_weights = self.agent.model.decode(json.loads(response_msg.body))
-            self.agent.logger.info("Model weights decoded successfully.")
-            # Perform consensus averaging with the received weights
-            self.agent.logger.info("Performing consensus averaging with received weights.")
-            new_weights = self.agent.weights = self.agent.consensus.average(
-                x_i=self.agent.weights,
-                x_j=received_weights
-            )
-            self.agent.weights = new_weights
-            self.agent.logger.info("Consensus averaging complete. New weights obtained.")
+            # TODO: # Structured RESPOND received
 
+        self.agent.log.info(f"PUSH: transition RECEIVE")
         self.set_next_state(TRAINING_STATE)
 
 class FinalState(State):
     async def run(self):
         # TODO: Cleanup / Final Reporting?
-        self.agent.logger.info("FSM execution completed. Agent will stop now.")
+        self.agent.log.info("FSM completed. Stopping agent.")
+
+        # TODO: Structured FINAL event

@@ -7,7 +7,8 @@ from loguru import logger
 
 def init_logging(run_id: str | None = None, level: str = "INFO") -> str:
     run_id = run_id or f"run-{uuid.uuid4().hex[:8]}"
-    log_dir = Path("logs") / run_id
+    project_root = Path(__file__).resolve().parent.parent.parent  # Adjust the number of .parent calls based on your directory structure
+    log_dir = project_root / "logs" / run_id
     log_dir.mkdir(parents=True, exist_ok=True)
 
     logger.remove()
@@ -26,12 +27,13 @@ def init_logging(run_id: str | None = None, level: str = "INFO") -> str:
     )
 
     logger.add(
-        log_dir / "agents.jsonl",
+        log_dir / "events.jsonl",
         level="INFO",
         serialize=True,
         enqueue=True,
         rotation="50 MB",
         retention="14 days",
+        filter=lambda rec: rec["extra"].get("stream") == "event",
     )
 
     warnings.filterwarnings("ignore", category=UserWarning)

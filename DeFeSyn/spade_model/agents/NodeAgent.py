@@ -43,8 +43,6 @@ class NodeAgent(Agent):
         self.log = logger.bind(node_id=id, jid=jid)
         self.event = self.log.bind(stream="event")
 
-
-
         self.log.info(f"Loading data from {self.data_source}/{self.manifest_file_name}...")
         self.loader = DatasetLoader(manifest_path=f"{self.data_source}/{self.manifest_file_name}")
         self.resource_names = self.loader.resource_names()

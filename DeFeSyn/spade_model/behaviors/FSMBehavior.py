@@ -11,7 +11,8 @@ from spade.behaviour import FSMBehaviour, State, OneShotBehaviour
 from spade.message import Message
 from spade.template import Template
 
-from DeFeSyn.models.CTGAN.wrapper import CTGANModel
+from DeFeSyn.models.CTGAN.wrapper import CTGANModel, gan_snapshot, l2_delta_between_snapshots, l2_norm_snapshot, \
+    try_gan_snapshot
 
 TRAINING_STATE = "TRAINING_STATE"
 PULL_STATE = "PULL_STATE"
@@ -76,14 +77,46 @@ class TrainingState(State):
             else:
                 self.agent.log.info("TRAIN: Cold start (no weights)")
 
+            theta_before = try_gan_snapshot(self.agent.model.model)
             t0 = time.perf_counter()
             self.agent.model.train()
             ms = (time.perf_counter() - t0) * 1000.0
+
+            theta_after = try_gan_snapshot(self.agent.model.model)
+            theta_norm = l2_norm_snapshot(theta_after)
+
+            if theta_before is not None:
+                delta_theta = l2_delta_between_snapshots(theta_before, theta_after)
+                theta_rel = delta_theta / (theta_norm + 1e-12)
+            else:
+                delta_theta = None
+                theta_rel = None
+
             self.agent.loss_values = self.agent.model.model.loss_values
             self.agent.weights = self.agent.model.get_weights()
-            self.agent.log.info(f"TRAIN done in {ms:.1f} ms; weights updated")
+            G_loss = float(self.agent.loss_values["Generator Loss"].iloc[-1]) if not self.agent.loss_values.empty else None
+            D_loss = float(self.agent.loss_values["Discriminator Loss"].iloc[-1]) if not self.agent.loss_values.empty else None
 
-            # TODO: Structured TRAIN event (last losses if available)
+            delta_str = f"{delta_theta:.4f}" if delta_theta is not None else "n/a"
+            rel_str = f"{theta_rel:.3e}" if theta_rel is not None else "n/a"
+            norm_str = f"{theta_norm:.4f}" if theta_norm is not None else "n/a"
+
+            self.agent.log.info(
+                "TRAIN: Δθ={} (rel {}) | ||θ||={} | time={:.1f}ms",
+                delta_str, rel_str, norm_str, ms
+            )
+
+            self.agent.event.bind(
+                event="TRAIN",
+                local_step=it,
+                epochs=int(self.epochs),
+                epoch_ms=float(ms),
+                G_loss=G_loss,
+                D_loss=D_loss,
+                delta_theta_l2=(float(delta_theta) if delta_theta is not None else None),  # ||θ_after − θ_before||₂
+                theta_l2=(float(theta_norm) if theta_norm is not None else None),  # ||θ_after||₂
+                rel_delta_theta=(float(theta_rel) if theta_rel is not None else None) # scale-free update
+            ).info("ctgan")
 
             self.agent.log.info(f"TRAIN: iteration {it} completed -> transition PULL")
             self.set_next_state(PULL_STATE)
@@ -97,6 +130,7 @@ class PullState(State):
             self.agent.log.info("PULL: processing queue…")
             consumed = []
             q_before = self.agent.queue.qsize()
+            t0 = time.perf_counter()
             while not self.agent.queue.empty():
                 msg = await self.agent.queue.get()
                 if msg.get_metadata("performative") == "inform" and msg.get_metadata("type") == "gossip":
@@ -114,10 +148,16 @@ class PullState(State):
                         "msg_id": msg.get_metadata("msg_id"),
                         "version": int(msg.get_metadata("version") or it)
                     })
+            ms = (time.perf_counter() - t0) * 1000.0
             q_after = self.agent.queue.qsize()
             self.agent.log.info(f"PULL: averaged {len(consumed)} updates (queue {q_before}→{q_after})")
 
-            # TODO: Structured PULL event
+            self.agent.event.bind(
+                event="MIX", local_step=self.agent.current_iteration,
+                consumed=consumed,
+                queue_len_before=int(q_before), queue_len_after=int(q_after),
+                mix_time_ms=float(ms)
+            ).info("consensus")
 
         self.agent.log.info(f"PULL transition PUSH")
         self.set_next_state(PUSH_STATE)
@@ -158,22 +198,35 @@ class PushState(State):
 
         self.agent.log.info(f"PUSH: send → {peer}")
         await self.send(msg)
+        payload_bytes = len(msg.body.encode("utf-8"))
 
-        # TODO: Structured PUSH event
+        self.agent.event.bind(
+            event="PUSH", local_step=self.agent.current_iteration,
+            neighbor_id=str(peer), msg_id=msg_id, version=int(version), bytes=int(payload_bytes)
+        ).info("send")
 
         self.agent.log.info(f"Waiting for RESPOND from {peer}")
         reply = await fut
         if reply is None:
             # TODO: Handle timeout or no response on other side?
             self.agent.log.warning(f"No RESPOND from {peer}")
-            # TODO: Structured RESPONSE event
+            self.agent.event.bind(
+                event="RESPOND_RECV", local_step=self.agent.current_iteration,
+                neighbor_id=str(peer), msg_id=None, version=None, timeout=True
+            ).info("none")
         else:
             self.agent.log.info(f"RESPOND from {reply.sender}")
             received_weights = self.agent.model.decode(json.loads(reply.body))
             self.agent.weights = self.agent.consensus.average(x_i=self.agent.weights, x_j=received_weights)
             self.agent.log.info(f"RESPOND: weights updated from {reply.sender}")
 
-            # TODO: # Structured RESPOND received
+            self.agent.event.bind(
+                event="RESPOND_RECV", local_step=self.agent.current_iteration,
+                neighbor_id=str(reply.sender),
+                msg_id=reply.get_metadata("msg_id"),
+                version=int(reply.get_metadata("version") or self.agent.current_iteration),
+                timeout=True
+            ).info("ok")
 
         self.agent.log.info(f"PUSH: transition RECEIVE")
         self.set_next_state(TRAINING_STATE)

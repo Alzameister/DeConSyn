@@ -20,7 +20,12 @@ class ReceiveBehavior(CyclicBehaviour):
             q_after = self.agent.queue.qsize()
             self.agent.log.info("RECEIVE: from {} (id={}, ver={}) → queue={}", sender, msg_id, msg_version, q_after)
 
-            # TODO: Structured RECEIVE event
+            self.agent.event.bind(
+                event="RECEIVE", local_step=self.agent.current_iteration,
+                neighbor_id=str(msg.sender), msg_id=msg_id, msg_version=msg_version,
+                staleness=(self.agent.current_iteration - msg_version) if msg_version >= 0 else None,
+                queue_len_after=int(q_after)
+            ).info("enqueue")
 
             # Respond
             pkg = None
@@ -46,6 +51,10 @@ class ReceiveBehavior(CyclicBehaviour):
                 self.agent.log.info("RESPOND_SEND: to {} (id={}, ver_sent={}, bytes={})",
                                     sender, resp_id, version_sent, bytes_out)
 
-                # TODO: Structured RESPOND event
+                self.agent.event.bind(
+                    event="RESPOND_SEND", local_step=self.agent.current_iteration,
+                    neighbor_id=str(msg.sender), out_msg_id=resp_id,
+                    bytes=len(resp.body.encode("utf-8"))
+                ).info("send")
             else:
                 self.agent.log.warning("RESPOND: no weights to send yet (train first)")

@@ -1,3 +1,5 @@
+import math
+
 import torch, io, gzip, base64, hashlib
 
 from DeFeSyn.models.CTGAN.synthesizers.ctgan import CTGAN
@@ -144,3 +146,59 @@ class CTGANModel:
             'generator': generator,
             'discriminator': discriminator
         }
+
+
+def _is_float_tensor(t: torch.Tensor) -> bool:
+    return t.is_floating_point()
+
+@torch.no_grad()
+def state_dict_snapshot(module: torch.nn.Module, device: str = "cpu") -> dict[str, torch.Tensor]:
+    """
+    Frozen copy of float tensors (params + float buffers), on CPU.
+    """
+    snap = {}
+    for k, v in module.state_dict().items():
+        if isinstance(v, torch.Tensor) and _is_float_tensor(v):
+            snap[k] = v.detach().to(device).clone()
+    return snap
+
+@torch.no_grad()
+def l2_delta_between_snapshots(a: dict[str, torch.Tensor], b: dict[str, torch.Tensor]) -> float:
+    """
+    Efficient L2 norm of (b - a) without concatenating huge vectors.
+    Assumes same keys & shapes.
+    """
+    s = 0.0
+    for k, va in a.items():
+        vb = b[k]
+        diff = vb - va
+        s += float((diff * diff).sum().item())
+    return math.sqrt(s)
+
+@torch.no_grad()
+def l2_norm_snapshot(a: dict[str, torch.Tensor]) -> float:
+    s = 0.0
+    for v in a.values():
+        s += float((v * v).sum().item())
+    return math.sqrt(s)
+
+
+@torch.no_grad()
+def gan_snapshot(generator: torch.nn.Module, discriminator: torch.nn.Module, device="cpu"):
+    g = state_dict_snapshot(generator, device)
+    d = state_dict_snapshot(discriminator, device)
+    return {("G", k): v for k, v in g.items()} | {("D", k): v for k, v in d.items()}
+
+@torch.no_grad()
+def try_gan_snapshot(ctgan_model: CTGANModel, device: str="cpu"):
+    """Return snapshot dict or None if G/D aren't ready yet."""
+    try:
+        G = getattr(ctgan_model, "_generator", None)
+        D = getattr(ctgan_model, "_discriminator", None)
+        if G is None or D is None:
+            return None
+        g = state_dict_snapshot(G, device)
+        d = state_dict_snapshot(D, device)
+        return {("G", k): v for k, v in g.items()} | {("D", k): v for k, v in d.items()}
+    except Exception:
+        return None

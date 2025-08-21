@@ -9,6 +9,7 @@ from spade.behaviour import FSMBehaviour, State, OneShotBehaviour
 from spade.message import Message
 from spade.template import Template
 
+from DeFeSyn.logging.logger import save_weights_pt, make_path
 from DeFeSyn.models.CTGAN.wrapper import CTGANModel, gan_snapshot, l2_delta_between_snapshots, l2_norm_snapshot, \
     try_gan_snapshot
 
@@ -268,7 +269,6 @@ class PushState(State):
         msg.set_metadata("content-type", "application/octet-stream+b64")
         msg.set_metadata("msg_id", msg_id)
         msg.set_metadata("version", version)
-        # --- NEW: ship your ε so peers can do min-rule ---
         msg.set_metadata("eps", str(self.agent.consensus.get_eps()))
         msg.body = json.dumps(pkg)
 
@@ -303,6 +303,19 @@ class PushState(State):
                 x_i=self.agent.weights,
                 x_j=received_weights,
                 eps_j=eps_j,
+            )
+
+            p = make_path(
+                run_id=self.agent.run_id,
+                node_id=self.agent.id,
+                iteration=it,
+                phase="weights",
+                ext="pt",
+                repo_root=self.agent.runs_dir
+            )
+            save_weights_pt(
+                state_dict=self.agent.weights,
+                path=p
             )
 
             self.agent.log.info(

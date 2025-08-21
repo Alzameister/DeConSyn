@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pandas as pd
 import spade
 import spade.agent
@@ -6,7 +8,7 @@ from spade.agent import Agent
 
 from DeFeSyn.consensus.Consensus import Consensus
 from DeFeSyn.data.DataLoader import DatasetLoader
-from DeFeSyn.logging.logger import init_logging
+from DeFeSyn.logging.logger import init_logging, get_repo_root
 from DeFeSyn.spade_model.behaviors.FSMBehavior import *
 from DeFeSyn.spade_model.behaviors.ReceiveBehavior import ReceiveBehavior, BarrierReceiver
 
@@ -45,6 +47,7 @@ class NodeAgent(Agent):
         self.current_iteration = 0
         self.neighbors = neighbors or []
         self.participants = self.neighbors + [self.jid]
+        self.repo_dir = get_repo_root()
 
         self.log = logger.bind(node_id=id, jid=jid)
         self.event = self.log.bind(stream="event")
@@ -173,6 +176,7 @@ async def main():
             epochs=epochs,
             max_iterations=max_iterations,
             neighbors=neighbors_map[i],
+            run_id=run_id
         )
         agents.append(a)
 

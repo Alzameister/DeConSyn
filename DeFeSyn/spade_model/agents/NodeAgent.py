@@ -172,7 +172,7 @@ async def main():
             manifest_file_name=manifest_name,
             epochs=epochs,
             max_iterations=max_iterations,
-            neighbors=neighbors_map[i],  # <<—— NEW
+            neighbors=neighbors_map[i],
         )
         agents.append(a)
 

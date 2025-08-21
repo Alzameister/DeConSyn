@@ -1,3 +1,4 @@
+import pandas as pd
 import spade
 import spade.agent
 from loguru import logger
@@ -7,8 +8,7 @@ from DeFeSyn.consensus.Consensus import Consensus
 from DeFeSyn.data.DataLoader import DatasetLoader
 from DeFeSyn.logging.logger import init_logging
 from DeFeSyn.spade_model.behaviors.FSMBehavior import *
-from DeFeSyn.spade_model.behaviors.ReceiveBehavior import ReceiveBehavior
-
+from DeFeSyn.spade_model.behaviors.ReceiveBehavior import ReceiveBehavior, BarrierReceiver
 
 # TODO: Refactor to a config file or environment variable
 ADULT_PATH = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/05_Data/adult"
@@ -29,9 +29,13 @@ class NodeAgent(Agent):
                  manifest_file_name: str,
                  epochs: int=100,
                  max_iterations: int=10,
+                 neighbors: list[str] | None = None,
                  run_id: str | None = None
              ):
         super().__init__(jid, password)
+        self.start_ready_from = None
+        self.start_expected = None
+        self.start_ready_event = None
         self.id = id
         self.run_id = run_id
         self.data_source = data_source
@@ -39,6 +43,8 @@ class NodeAgent(Agent):
         self.epochs = epochs
         self.max_iterations = max_iterations
         self.current_iteration = 0
+        self.neighbors = neighbors or []
+        self.participants = self.neighbors + [self.jid]
 
         self.log = logger.bind(node_id=id, jid=jid)
         self.event = self.log.bind(stream="event")
@@ -79,7 +85,14 @@ class NodeAgent(Agent):
         self.presence.on_unsubscribed = lambda jid: asyncio.create_task(self._on_unsubscribed(jid))
 
         receive_template = Template(metadata={"performative": "inform", "type": "gossip"})
-        self.add_behaviour(ReceiveBehavior(), receive_template)
+        self.add_behaviour(ReceiveBehavior(), template=receive_template)
+
+        self.start_ready_from = {str(self.jid)}  # include self
+        self.start_expected = set(map(str, getattr(self, "participants", [self.jid]))) | {str(self.jid)}
+        self.start_ready_event = asyncio.Event()
+
+        barrier_tmpl = Template(metadata={"performative": "inform", "type": "barrier", "stage": "start"})
+        self.add_behaviour(BarrierReceiver(), template=barrier_tmpl)
 
         self.log.info("NodeAgent setup complete.")
 
@@ -90,11 +103,13 @@ class NodeAgent(Agent):
         """
         self.log.info("Setting up FSM...")
         fsm = NodeFSMBehaviour()
-        fsm.add_state(name=TRAINING_STATE, state=TrainingState(), initial=True)
+        fsm.add_state(name=START_STATE, state=StartState(), initial=True)
+        fsm.add_state(name=TRAINING_STATE, state=TrainingState())
         fsm.add_state(name=PULL_STATE, state=PullState())
         fsm.add_state(name=PUSH_STATE, state=PushState())
         fsm.add_state(name=FINAL_STATE, state=FinalState())
 
+        fsm.add_transition(source=START_STATE, dest=TRAINING_STATE)
         fsm.add_transition(source=TRAINING_STATE, dest=PULL_STATE)
         fsm.add_transition(source=TRAINING_STATE, dest=PUSH_STATE)
         fsm.add_transition(source=PULL_STATE, dest=PUSH_STATE)
@@ -115,11 +130,16 @@ class NodeAgent(Agent):
     async def _on_unsubscribed(self, jid):
         self.log.info(f"[{self.jid}] unsubscribed by {jid}")
 
+def agent_jid(i: int) -> str:
+    return f"agent{i}@localhost"
+
 async def main():
     run_id = init_logging(level="INFO")
     nr_agents = 2
     epochs = 1
     max_iterations = 2
+
+    # ---- Data prep
     data_dir = f"{ADULT_PATH}/{nr_agents}"
     logger.info(f"Splitting dataset into {nr_agents} parts...")
     loader = DatasetLoader(manifest_path=f"{ADULT_PATH}/{ADULT_MANIFEST}")
@@ -127,43 +147,49 @@ async def main():
     train = loader.get_train()
     test = loader.get_test()
     data_dir, manifest_name = loader.split(nr_agents, save_path=data_dir)
+    logger.info(f"Finished splitting dataset into {nr_agents} parts...")
 
-    logger.info("Starting NodeAgents...")
-    agent_1 = NodeAgent(jid="agent0@localhost", id=0, password="password", full_data=full_data, full_test_data=test, full_train_data=train,
-                        data_source=data_dir,
-                        manifest_file_name=manifest_name, epochs=epochs, max_iterations=max_iterations)
-    agent_2 = NodeAgent(jid="agent1@localhost", id=1, password="password", full_data=full_data, full_test_data=test, full_train_data=train, data_source=data_dir,
-                        manifest_file_name=manifest_name, epochs=epochs, max_iterations=max_iterations)
+    # ---- Topology (ring). Swap for full-mesh if you prefer.
+    neighbors_map = {
+        i: [agent_jid((i + 1) % nr_agents)]  # ring neighbor
+        for i in range(nr_agents)
+    }
+    # Full-mesh alternative:
+    # neighbors_map = {i: [agent_jid(j) for j in range(nr_agents) if j != i] for i in range(nr_agents)}
 
-    await asyncio.gather(
-        agent_1.start(auto_register=True),
-        agent_2.start(auto_register=True)
-    )
-    logger.info("All Agents started")
+    # ---- Create agents (pass neighbors)
+    logger.info(f"Loading {nr_agents} agents...")
+    agents = []
+    for i in range(nr_agents):
+        a = NodeAgent(
+            jid=agent_jid(i),
+            id=i,
+            password="password",
+            full_data=full_data,
+            full_train_data=train,
+            full_test_data=test,
+            data_source=data_dir,
+            manifest_file_name=manifest_name,
+            epochs=epochs,
+            max_iterations=max_iterations,
+            neighbors=neighbors_map[i],  # <<—— NEW
+        )
+        agents.append(a)
 
-    agent_1.presence.subscribe("agent1@localhost")
-    agent_2.presence.subscribe("agent0@localhost")
-    logger.info("Agents subscribed to each other")
+    # ---- Start agents
+    await asyncio.gather(*[a.start(auto_register=True) for a in agents])
+    logger.info(f"{nr_agents} agents started.")
 
-    await asyncio.sleep(2)  # Wait for subscriptions to be established
+    # ---- Add FSMs (START_STATE will subscribe + wait for availability)
+    await asyncio.gather(*[a.setup_fsm() for a in agents])
+    logger.info("FSM behaviors added to agents.")
 
-    await asyncio.gather(
-        agent_1.setup_fsm(),
-        agent_2.setup_fsm()
-    )
-    logger.info("FSM behaviors added")
+    # ---- Wait for completion and stop
+    await asyncio.gather(*[spade.wait_until_finished(a) for a in agents])
+    logger.info("Agents finished their tasks.")
 
-    await asyncio.gather(
-        spade.wait_until_finished(agent_1),
-        spade.wait_until_finished(agent_2)
-    )
-    logger.info("Agents finished their tasks")
-
-    await asyncio.gather(
-        agent_2.stop(),
-        agent_1.stop()
-    )
-    logger.info("Agent finished")
+    await asyncio.gather(*[a.stop() for a in agents])
+    logger.info("Agents stopped.")
 
 if __name__ == "__main__":
     try:

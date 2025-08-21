@@ -116,12 +116,3 @@ def parse_meta_from_path(path: str | Path) -> dict:
         "phase": g.get("phase"),
         "ext": g["ext"],
     }
-
-def save_weights_pt(state_dict: dict, path: str | Path) -> None:
-    path = Path(path)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    cpu_sd = {k: (v.detach().cpu() if hasattr(v, "detach") else v) for k, v in state_dict.items()}
-    torch.save(cpu_sd, path)
-
-def load_weights_pt(path: str | Path, device="cpu") -> dict:
-    return torch.load(path, map_location=device)

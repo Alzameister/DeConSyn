@@ -9,9 +9,10 @@ from spade.behaviour import FSMBehaviour, State, OneShotBehaviour
 from spade.message import Message
 from spade.template import Template
 
-from DeFeSyn.logging.logger import save_weights_pt, make_path
-from DeFeSyn.models.CTGAN.wrapper import CTGANModel, gan_snapshot, l2_delta_between_snapshots, l2_norm_snapshot, \
+from DeFeSyn.logging.logger import make_path
+from DeFeSyn.models.CTGAN.wrapper import CTGANModel, l2_delta_between_snapshots, l2_norm_snapshot, \
     try_gan_snapshot
+from DeFeSyn.utils.io import save_weights_pt
 
 START_STATE = "START_STATE"
 TRAINING_STATE = "TRAINING_STATE"
@@ -311,7 +312,7 @@ class PushState(State):
                 iteration=it,
                 phase="weights",
                 ext="pt",
-                repo_root=self.agent.runs_dir
+                repo_root=self.agent.repo_dir
             )
             save_weights_pt(
                 state_dict=self.agent.weights,

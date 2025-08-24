@@ -38,7 +38,9 @@ class CTGANModel:
         self.model.fit(
             full_data=self.full_data,
             train_data=self.data,
-            discrete_columns=self.discrete_columns
+            discrete_columns=self.discrete_columns,
+            gen_state_dict=self.weights.get('generator', None),
+            dis_state_dict=self.weights.get('discriminator', None)
         )
         self.weights = self.get_weights()
 
@@ -61,7 +63,6 @@ class CTGANModel:
         Returns:
             dict: Weights of the CTGAN model.
         """
-        # TODO: Save only generator, or also _discriminator? If both, are we allowed to make changes to the ctgan library (License)?
         return {
             'generator': self.model._generator.state_dict(),
             'discriminator': self.model._discriminator.state_dict()
@@ -75,6 +76,7 @@ class CTGANModel:
             weights (dict): Weights to load into the model.
         """
         if 'generator' in weights and 'discriminator' in weights:
+            self.weights = weights
             self.model._generator.load_state_dict(weights['generator'])
             self.model._discriminator.load_state_dict(weights['discriminator'])
         else:

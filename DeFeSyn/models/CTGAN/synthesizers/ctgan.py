@@ -317,7 +317,17 @@ class CTGAN(BaseSynthesizer):
             )
 
     @random_state
-    def fit(self, full_data, train_data, discrete_columns=(), epochs=None):
+    def fit(
+            self,
+            full_data,
+            train_data,
+            discrete_columns=(),
+            epochs=None,
+            *,
+            gen_state_dict=None,  # NEW (optional)
+            dis_state_dict=None,  # NEW (optional)
+            strict=True  # NEW: pass-through to load_state_dict
+    ):
         """Fit the CTGAN Synthesizer models to the training data.
 
         Args:
@@ -363,6 +373,30 @@ class CTGAN(BaseSynthesizer):
         self._discriminator = Discriminator(
             data_dim + self._data_sampler.dim_cond_vec(), self._discriminator_dim, pac=self.pac
         ).to(self._device)
+
+        # --- load pretrained weights if provided (AFTER building nets) ---
+        def _coerce_for(module, sd):
+            if sd is None:
+                return None
+            target = module.state_dict()
+            fixed = {}
+            for k, v in sd.items():
+                if torch.is_tensor(v):
+                    # match device & dtype of target param
+                    dt = target[k].dtype if k in target else v.dtype
+                    fixed[k] = v.detach().to(self._device, dtype=dt)
+                else:
+                    fixed[k] = v
+            return fixed
+
+        if gen_state_dict is not None:
+            gs = _coerce_for(self._generator, gen_state_dict)
+            self._generator.load_state_dict(gs, strict=strict)
+            loaded_gen_state_dict = self._generator.state_dict()
+
+        if dis_state_dict is not None:
+            ds = _coerce_for(self._discriminator, dis_state_dict)
+            self._discriminator.load_state_dict(ds, strict=strict)
 
         optimizerG = optim.Adam(
             self._generator.parameters(),
@@ -487,6 +521,9 @@ class CTGAN(BaseSynthesizer):
                 epoch_iterator.set_description(
                     description.format(gen=generator_loss, dis=discriminator_loss)
                 )
+
+        gen_state_dict = self._generator.state_dict()
+        print("Generator state dict keys after training:", gen_state_dict.keys())
 
     @random_state
     def sample(self, n, condition_column=None, condition_value=None):

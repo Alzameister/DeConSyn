@@ -5,6 +5,7 @@ import spade
 from DeFeSyn.spade_model.agents.NodeAgent import NodeAgent
 from DeFeSyn.data.DataLoader import DatasetLoader
 from DeFeSyn.logging.logger import init_logging
+from DeFeSyn.metrics.metrics import plot_weights
 
 def agent_jid(i: int) -> str:
     return f"agent{i}@localhost"
@@ -15,9 +16,9 @@ async def main():
     # ---- Setup
     ADULT_PATH = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/05_Data/adult"
     ADULT_MANIFEST = "manifest.yaml"
-    NR_AGENTS = 2
-    EPOCHS = 1
-    MAX_ITERATIONS = 2
+    NR_AGENTS = 4
+    EPOCHS = 50
+    MAX_ITERATIONS = 20
 
     # ---- Load and split dataset
     data_dir = f"{ADULT_PATH}/{NR_AGENTS}"
@@ -73,6 +74,14 @@ async def main():
 
     await asyncio.gather(*[a.stop() for a in agents])
     logger.info("Agents stopped.")
+
+    # ---- Run metrics
+    logger.info("Running metrics...")
+    plot_weights(
+        run_id=run_id,
+        param_regex=r"generator",
+        index=0
+    )
 
 if __name__ == "__main__":
     try:

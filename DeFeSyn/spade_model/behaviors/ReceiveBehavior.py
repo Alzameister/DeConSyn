@@ -95,13 +95,38 @@ class ReceiveBehavior(CyclicBehaviour):
 
 class BarrierReceiver(CyclicBehaviour):
     async def run(self):
-        msg = await self.receive(timeout=1.0)
+        msg = await self.receive(timeout=0.1)
+        if msg and msg.get_metadata("type") == "barrier-hello":
+            # echo the token back so the sender knows it's for this round
+            ack = msg.make_reply()
+            ack.set_metadata("performative", "inform")
+            ack.set_metadata("type", "barrier-ack")
+            ack.set_metadata("token", msg.get_metadata("token"))
+            await self.send(ack)
+
+class BarrierHelloResponder(CyclicBehaviour):
+    async def run(self):
+        msg = await self.receive(timeout=0.1)  # template attached below
         if not msg:
             return
-        if (msg.get_metadata("type") == "barrier"
-                and msg.get_metadata("stage") == "start"
-                and (msg.body or "").strip() == "ready"):
-            self.agent.start_ready_from.add(str(msg.sender))
-            if self.agent.start_expected.issubset(self.agent.start_ready_from):
-                if not self.agent.start_ready_event.is_set():
-                    self.agent.start_ready_event.set()
+        token = msg.get_metadata("token") or ""
+        # reply ACK (echo token back)
+        ack = msg.make_reply()
+        ack.set_metadata("performative", "inform")
+        ack.set_metadata("type", "barrier-ack")
+        ack.set_metadata("token", token)
+        await self.send(ack)
+        self.agent.log.debug(f"HELLO from {msg.sender} → ACK(token={token})")
+
+class BarrierAckRouter(CyclicBehaviour):
+    async def run(self):
+        msg = await self.receive(timeout=0.1)  # template filters by type=barrier-ack
+        if not msg:
+            return
+        token = msg.get_metadata("token") or ""
+        q = self.agent.barrier_queues.get(token)
+        if q:
+            await q.put(str(msg.sender))
+            self.agent.log.debug(f"ACK routed token={token} from={msg.sender}")
+        else:
+            self.agent.log.debug(f"ACK for unknown token={token} from={msg.sender}")

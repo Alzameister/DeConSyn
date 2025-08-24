@@ -8,9 +8,11 @@ from spade.agent import Agent
 
 from DeFeSyn.consensus.Consensus import Consensus
 from DeFeSyn.data.DataLoader import DatasetLoader
-from DeFeSyn.logging.logger import init_logging, get_repo_root
+from DeFeSyn.logging.logger import init_logging
 from DeFeSyn.spade_model.behaviors.FSMBehavior import *
-from DeFeSyn.spade_model.behaviors.ReceiveBehavior import ReceiveBehavior, BarrierReceiver
+from DeFeSyn.spade_model.behaviors.ReceiveBehavior import ReceiveBehavior, BarrierReceiver, BarrierHelloResponder, \
+    BarrierAckRouter
+from DeFeSyn.utils.io import get_repo_root
 
 # TODO: Refactor to a config file or environment variable
 ADULT_PATH = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/05_Data/adult"
@@ -73,6 +75,7 @@ class NodeAgent(Agent):
         self.model: CTGANModel = None  # Placeholder for the model instance
         self.consensus: Consensus = Consensus()
 
+        self.barrier_queues: dict[str, asyncio.Queue[str]] = {}
         self.queue: asyncio.Queue = asyncio.Queue()
         self.push_queue: asyncio.Queue = asyncio.Queue()
         self.weights: dict = {}  # Placeholder for model weights
@@ -94,8 +97,10 @@ class NodeAgent(Agent):
         self.start_expected = set(map(str, getattr(self, "participants", [self.jid]))) | {str(self.jid)}
         self.start_ready_event = asyncio.Event()
 
-        barrier_tmpl = Template(metadata={"performative": "inform", "type": "barrier", "stage": "start"})
-        self.add_behaviour(BarrierReceiver(), template=barrier_tmpl)
+        hello_tmpl = Template(metadata={"performative": "inform", "type": "barrier-hello"})
+        ack_tmpl = Template(metadata={"performative": "inform", "type": "barrier-ack"})
+        self.add_behaviour(BarrierHelloResponder(), template=hello_tmpl)
+        self.add_behaviour(BarrierAckRouter(), template=ack_tmpl)
 
         self.log.info("NodeAgent setup complete.")
 
@@ -125,7 +130,8 @@ class NodeAgent(Agent):
     async def _on_subscribe(self, jid):
         self.log.info(f"[{self.jid}] got subscribe from {jid}")
         self.presence.approve_subscription(jid)
-        await self.presence.subscribe(jid)  # ensure mutual subscription
+        #await self.presence.subscribe(jid)  # ensure mutual subscription
+        self.presence.subscribe(jid)
 
     async def _on_subscribed(self, jid):
         self.log.info(f"[{self.jid}] subscription completed with {jid}")
@@ -138,32 +144,35 @@ def agent_jid(i: int) -> str:
 
 async def main():
     run_id = init_logging(level="INFO")
-    nr_agents = 2
-    epochs = 1
-    max_iterations = 2
+    NR_AGENTS = 3
+    EPOCHS = 2
+    MAX_ITERATIONS = 20
 
     # ---- Data prep
-    data_dir = f"{ADULT_PATH}/{nr_agents}"
-    logger.info(f"Splitting dataset into {nr_agents} parts...")
+    data_dir = f"{ADULT_PATH}/{NR_AGENTS}"
+    logger.info(f"Splitting dataset into {NR_AGENTS} parts...")
     loader = DatasetLoader(manifest_path=f"{ADULT_PATH}/{ADULT_MANIFEST}")
     full_data = loader.concat()
     train = loader.get_train()
     test = loader.get_test()
-    data_dir, manifest_name = loader.split(nr_agents, save_path=data_dir)
-    logger.info(f"Finished splitting dataset into {nr_agents} parts...")
+    data_dir, manifest_name = loader.split(NR_AGENTS, save_path=data_dir)
+    logger.info(f"Finished splitting dataset into {NR_AGENTS} parts...")
 
-    # ---- Topology (ring). Swap for full-mesh if you prefer.
+    # ---- Topology (ring). Also add previous or next agent as neighbors.
     neighbors_map = {
-        i: [agent_jid((i + 1) % nr_agents)]  # ring neighbor
-        for i in range(nr_agents)
+        i: [
+            agent_jid((i + 1) % NR_AGENTS),  # Next neighbor
+            agent_jid((i + NR_AGENTS - 1) % NR_AGENTS)  # Previous neighbor
+        ]
+        for i in range(NR_AGENTS)
     }
     # Full-mesh alternative:
     # neighbors_map = {i: [agent_jid(j) for j in range(nr_agents) if j != i] for i in range(nr_agents)}
 
     # ---- Create agents (pass neighbors)
-    logger.info(f"Loading {nr_agents} agents...")
+    logger.info(f"Loading {NR_AGENTS} agents...")
     agents = []
-    for i in range(nr_agents):
+    for i in range(NR_AGENTS):
         a = NodeAgent(
             jid=agent_jid(i),
             id=i,
@@ -173,8 +182,8 @@ async def main():
             full_test_data=test,
             data_source=data_dir,
             manifest_file_name=manifest_name,
-            epochs=epochs,
-            max_iterations=max_iterations,
+            epochs=EPOCHS,
+            max_iterations=MAX_ITERATIONS,
             neighbors=neighbors_map[i],
             run_id=run_id
         )
@@ -182,7 +191,7 @@ async def main():
 
     # ---- Start agents
     await asyncio.gather(*[a.start(auto_register=True) for a in agents])
-    logger.info(f"{nr_agents} agents started.")
+    logger.info(f"{NR_AGENTS} agents started.")
 
     # ---- Add FSMs (START_STATE will subscribe + wait for availability)
     await asyncio.gather(*[a.setup_fsm() for a in agents])

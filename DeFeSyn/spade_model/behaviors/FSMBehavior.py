@@ -9,10 +9,9 @@ from spade.behaviour import FSMBehaviour, State, OneShotBehaviour
 from spade.message import Message
 from spade.template import Template
 
-from DeFeSyn.logging.logger import make_path
 from DeFeSyn.models.CTGAN.wrapper import CTGANModel, l2_delta_between_snapshots, l2_norm_snapshot, \
     try_gan_snapshot
-from DeFeSyn.utils.io import save_weights_pt
+from DeFeSyn.utils.io import save_weights_pt, make_path
 
 START_STATE = "START_STATE"
 TRAINING_STATE = "TRAINING_STATE"
@@ -36,56 +35,51 @@ class NodeFSMBehaviour(FSMBehaviour):
 
 class StartState(State):
     async def run(self):
-        self.agent.presence.set_available()
+        neighbors = [str(j) for j in self.agent.neighbors]   # fixed list
+        token = f"barrier-{self.agent.id}-{uuid.uuid4().hex[:6]}"
 
-        for jid in self.agent.neighbors:
-            self.agent.log.info(f"START: subscribing to {jid}")
-            self.agent.presence.subscribe(jid)
+        # register a queue for this token
+        q: asyncio.Queue[str] = asyncio.Queue()
+        self.agent.barrier_queues[token] = q
 
-        # Wait until all neighbors are available (or timeout)
-        target = set(map(str, self.agent.neighbors))
-        timeout = asyncio.get_event_loop().time() + 120.0  # 2 min timeout
-        while True:
-            contacts = self.agent.presence.get_contacts()
-            avail = {str(j) for j, c in contacts.items() if c.is_available()}
-            if target.issubset(avail):
-                self.agent.log.info(f"START: neighbors ready: {sorted(avail)}")
-                break
-            if asyncio.get_event_loop().time() > timeout:
-                self.agent.log.warning(f"START: timeout waiting for neighbors; continuing with {sorted(avail)}")
-                break
-            await asyncio.sleep(0.2)  # yield; don't block the loop
-
-        # 3) Barrier: everyone must say "ready" for stage=start
-        async def send_ready():
-            for peer in self.agent.start_expected:
-                if peer == str(self.agent.jid):
-                    continue
-                m = Message(to=peer)
+        async def send_hellos(targets):
+            for jid in targets:
+                m = Message(to=jid)
                 m.set_metadata("performative", "inform")
-                m.set_metadata("type", "barrier")
-                m.set_metadata("stage", "start")
-                m.body = "ready"
+                m.set_metadata("type", "barrier-hello")
+                m.set_metadata("token", token)   # <— IMPORTANT
                 await self.send(m)
 
-        await send_ready()
+        await send_hellos(neighbors)
 
-        # wait with rebroadcasts
-        deadline = asyncio.get_event_loop().time() + 120.0
-        rebroadcast_at = asyncio.get_event_loop().time() + 3.0
-        while not self.agent.start_ready_event.is_set():
-            now = asyncio.get_event_loop().time()
-            if now >= rebroadcast_at:
-                await send_ready()
-                rebroadcast_at = now + 3.0
-            if now > deadline:
-                missing = sorted(self.agent.start_expected - self.agent.start_ready_from)
-                self.agent.log.warning("START: barrier timeout; missing={}. Proceeding.", missing)
-                break
-            await asyncio.sleep(0.2)
+        got = set()
+        deadline  = time.perf_counter() + 1000.0   # overall timeout
+        resend_at = time.perf_counter() + 1.0    # resend cadence
 
-        self.agent.log.info("START: barrier passed with {}", sorted(list(self.agent.start_ready_from)))
-        self.agent.log.info("START_STATE transition to TRAINING_STATE")
+        while time.perf_counter() < deadline and len(got) < len(neighbors):
+            # drain ACKs (delivered by BarrierAckRouter)
+            try:
+                sender = await asyncio.wait_for(q.get(), timeout=0.2)
+                got.add(sender)
+                self.agent.log.info(f"START: ACK from {sender} ({len(got)}/{len(neighbors)})")
+            except asyncio.TimeoutError:
+                pass
+
+            # resend HELLOs to missing peers every 1s
+            now = time.perf_counter()
+            if now >= resend_at and len(got) < len(neighbors):
+                missing = [j for j in neighbors if j not in got]
+                await send_hellos(missing)
+                resend_at = now + 1.0
+
+        # cleanup
+        self.agent.barrier_queues.pop(token, None)
+
+        if len(got) < len(neighbors):
+            self.agent.log.warning(f"START: barrier partial {len(got)}/{len(neighbors)} → proceed anyway")
+        else:
+            self.agent.log.info("START: barrier complete")
+
         self.set_next_state(TRAINING_STATE)
 
 class TrainingState(State):
@@ -201,17 +195,15 @@ class PullState(State):
 
             while not self.agent.queue.empty():
                 msg = await self.agent.queue.get()
-                if msg.get_metadata("performative") == "inform" and msg.get_metadata("type") == "gossip":
+                if msg.get_metadata("performative") == "inform" and msg.get_metadata("type") == "gossip-reply":
                     self.agent.log.info(f"PULL: got weights from {msg.sender}")
 
                     received_weights = self.agent.model.decode(json.loads(msg.body))
-                    # --- NEW: parse neighbor ε (backward-compat fallback) ---
                     try:
                         eps_j = float(msg.get_metadata("eps"))
                     except (TypeError, ValueError):
                         eps_j = self.agent.consensus.get_eps()
 
-                    # --- NEW: apply dynamic-ε consensus step (with correction term) ---
                     self.agent.weights = self.agent.consensus.step_with_neighbor(
                         x_i=self.agent.weights,
                         x_j=received_weights,
@@ -245,7 +237,7 @@ class PushState(State):
                 self.fut = fut
 
             async def run(self):
-                future = await self.receive(timeout=30.0)
+                future = await self.receive(timeout=1000.0)
                 self.fut.set_result(future)
 
         it = self.agent.current_iteration

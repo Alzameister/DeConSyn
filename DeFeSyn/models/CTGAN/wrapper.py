@@ -193,7 +193,7 @@ def gan_snapshot(generator: torch.nn.Module, discriminator: torch.nn.Module, dev
     return {("G", k): v for k, v in g.items()} | {("D", k): v for k, v in d.items()}
 
 @torch.no_grad()
-def try_gan_snapshot(ctgan_model: CTGANModel, device: str="cpu"):
+def get_gan_snapshot(ctgan_model: CTGANModel, device: str= "cpu"):
     """Return snapshot dict or None if G/D aren't ready yet."""
     try:
         G = getattr(ctgan_model, "_generator", None)

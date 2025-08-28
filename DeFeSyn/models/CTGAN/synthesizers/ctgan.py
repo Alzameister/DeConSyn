@@ -355,8 +355,10 @@ class CTGAN(BaseSynthesizer):
                 DeprecationWarning,
             )
 
-        self._transformer = DataTransformer()
-        self._transformer.fit(full_data, discrete_columns)
+        if self._transformer is None:
+            print("Fitting new DataTransformer model...")
+            self._transformer = DataTransformer()
+            self._transformer.fit(full_data, discrete_columns)
 
         train_data = self._transformer.transform(train_data)
 

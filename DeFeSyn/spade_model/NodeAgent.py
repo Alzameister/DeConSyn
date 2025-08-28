@@ -23,6 +23,7 @@ class NodeConfig:
     password: str
     epochs: int = 100
     max_iterations: int = 10
+    alpha: float = 0.5
     run_id: str | None = None
 
 @dataclass(frozen=True)
@@ -69,7 +70,7 @@ class NodeAgent(Agent):
 
         # --- infra
         self.repo_dir: Path = repo_root or get_repo_root()
-        self.consensus: Consensus = consensus or Consensus()
+        self.consensus: Consensus = consensus or Consensus(alpha=cfg.alpha)
 
         # queues for gossip + barrier tokens
         self.queue: asyncio.Queue = asyncio.Queue()
@@ -112,7 +113,6 @@ class NodeAgent(Agent):
         self.log.info("NodeAgent setup complete.")
 
     async def _setup_fsm(self):
-        # TODO: Refactor
         fsm = NodeFSMBehaviour()
         fsm.add_state(name=START_STATE, state=StartState(), initial=True)
         fsm.add_state(name=TRAINING_STATE, state=TrainingState())

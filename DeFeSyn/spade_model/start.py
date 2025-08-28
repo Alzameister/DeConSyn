@@ -52,6 +52,7 @@ async def main():
     NR_AGENTS = 4
     EPOCHS = 15
     MAX_ITERATIONS = 20
+    ALPHA = 0.9
 
     # --- Data prep (outside agents)
     loader = DatasetLoader(manifest_path=f"{ADULT_PATH}/{ADULT_MANIFEST}")
@@ -80,6 +81,7 @@ async def main():
                 password="password",
                 epochs=EPOCHS,
                 max_iterations=MAX_ITERATIONS,
+                alpha=ALPHA,
                 run_id=run_id,
             )
             data = partition_for(i)

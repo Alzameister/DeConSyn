@@ -205,6 +205,8 @@ class TrainingState(BaseState):
             D_loss=D_loss
         ).info("ctgan")
 
+        self.agent.consensus.start_consensus_window(self.agent.weights)
+
         self.log.info("TRAIN: iteration {} completed → transition PULL", it)
         self.set_next_state(PULL_STATE)
 
@@ -307,9 +309,9 @@ class PushState(BaseState):
 
             async def run(self):
                 loop = asyncio.get_running_loop()
-                deadline = loop.time() + self.global_timeout
+                deadline = loop.time() + self.timeout
 
-                if self.global_timeout == 0:
+                if self.timeout == 0:
                     if not self._peer_available():
                         self.agent.log.warning("WaitResponse: peer {} unavailable (immediate timeout)", self.peer_jid)
                         self.fut.set_result(None)
@@ -343,7 +345,9 @@ class PushState(BaseState):
 
         # choose an active peer
         active = self._active_neighbors()
+        self.log.info("PUSH: active neighbors: {}", active)
         peer = pick_random_peer(active)
+        self.log.info("PUSH: peer {}", peer)
         if not peer:
             self.log.warning("PUSH: no available neighbors; skipping this round")
             self.set_next_state(TRAINING_STATE)
@@ -351,7 +355,7 @@ class PushState(BaseState):
 
         fut = asyncio.get_running_loop().create_future()
         template = Template(metadata={"performative": MT_INFORM, "type": T_GOSSIP_REPLY})
-        self.agent.add_behaviour(WaitResponse(fut), template)
+        self.agent.add_behaviour(WaitResponse(fut, peer), template)
 
         # prepare payload
         pkg = await asyncio.to_thread(self._encode_weights)

@@ -1,4 +1,4 @@
-# -------- Repo root detection --------
+import copy
 import os
 from functools import lru_cache
 from pathlib import Path
@@ -59,6 +59,30 @@ def save_weights_pt(state_dict: dict, path: str | Path) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     cpu_sd = {k: (v.detach().cpu() if hasattr(v, "detach") else v) for k, v in state_dict.items()}
     torch.save(cpu_sd, path)
+
+def save_model_pickle(model, path: str | Path, *, keep_discriminator=True) -> None:
+    path = Path(path)
+    path.parent.mkdir(parents=True, exist_ok=True)
+
+    m = copy.deepcopy(model)  # don't mutate the live object
+
+    # Put internal modules on CPU for portability
+    try:
+        m.set_device(torch.device("cpu"))
+    except Exception:
+        pass
+
+    if getattr(m, "_generator", None) is not None:
+        m._generator.to("cpu").eval()
+
+    if getattr(m, "_discriminator", None) is not None:
+        if keep_discriminator:
+            m._discriminator.to("cpu").eval()
+        else:
+            # Optional: drop it to shrink the file (not needed for sampling)
+            m._discriminator = None
+
+    torch.save(m, path)
 
 def load_weights_pt(path: str | Path, device="cpu") -> dict:
     return torch.load(path, map_location=device)

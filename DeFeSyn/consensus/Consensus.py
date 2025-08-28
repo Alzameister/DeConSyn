@@ -18,21 +18,18 @@ class Consensus:
         # Snapshot of weights at start of consensus window (x_i^0)
         self.x0 = None                  # same structure as weights
 
-    # --- call when your neighborhood changes (presence updates) ---
     def set_degree(self, degree: int):
         """Initialize/reset ε_i when topology changes (Eq. (4): ε ≤ 1/d_i)."""
         self.degree = max(1, int(degree))
         self.eps = self.alpha / self.degree  # strict version of Eq. (4), is valid because epsilon is less than 1/d_i
         self.prev_eps = self.eps
 
-    # --- call right after each local training epoch, before doing c consensus steps ---
     def start_consensus_window(self, x_i: dict):
         """Capture x_i^0 for the correction term (Eq. (10)/(13))."""
         self.x0 = deepcopy(x_i)
         self.prev_eps = self.eps  # first step in this window will see eps^{t+1}/eps^{t} = 1 ⇒ zero correction
         self.all_eps.append(self.eps)  # log current epsilon
 
-    # --- one asynchronous pairwise step with neighbor j ---
     def step_with_neighbor(self, x_i: dict, x_j: dict, eps_j: float) -> dict:
         """
         Apply asynchronous consensus with dynamic epsilon:
@@ -43,7 +40,6 @@ class Consensus:
             raise ValueError(f"Model type {self.model_type} not supported.")
 
         if self.x0 is None:
-            # If not set explicitly, treat current weights as x0 (safe fallback)
             self.x0 = deepcopy(x_i)
 
         # Update epsilon_i by the min rule (pairwise specialization of Eq. (5))
@@ -51,9 +47,9 @@ class Consensus:
 
         # Precompute correction factor: (1 - ε^{t+1}/ε^{t})
         if self.prev_eps <= 0:
-            corr_scale = 0.0
+            corr = 0.0
         else:
-            corr_scale = 1.0 - (new_eps / self.prev_eps)
+            corr = 1.0 - (new_eps / self.prev_eps)
 
         def blend_dict(A, B, A0):
             out = {}
@@ -63,7 +59,7 @@ class Consensus:
                 # consensus part: (1-ε) * a + ε * b
                 cons = a + new_eps * (b - a)
                 # correction term: (1 - ε^{t+1}/ε^{t}) * (a - a0)
-                out[k] = cons - corr_scale * (a - a0)
+                out[k] = cons - corr * (a - a0)
             return out
 
         gen_i = x_i['generator']
@@ -79,34 +75,10 @@ class Consensus:
             'discriminator': blend_dict(dis_i, dis_j, x0_dis)
         }
 
-        # Roll ε forward
         self.prev_eps = self.eps
         self.eps = new_eps
 
         return updated
 
-    # --- include ε_i in every message you send so neighbors can run the min rule (Eq. 12) ---
     def get_eps(self) -> float:
         return float(self.eps)
-
-    def average(self, x_i: dict, x_j: dict):
-        """
-        Performs consensus averaging of two sets of model weights. The formula for the model update is:
-        x_i = x_i + learning_factor * (x_j - x_i)
-        Args:
-            x_i (dict): Weights of the first model.
-            x_j (dict): Weights of the second model.
-        Returns:
-            dict: Averaged weights.
-        """
-        if self.model_type == "CTGAN":
-            gen_i = x_i['generator']
-            gen_j = x_j['generator']
-            dis_i = x_i['discriminator']
-            dis_j = x_j['discriminator']
-            return {
-                'generator': {key: value + self.learning_factor * (gen_j[key] - value) for key, value in gen_i.items()},
-                'discriminator': {key: value + self.learning_factor * (dis_j[key] - value) for key, value in dis_i.items()}
-            }
-        else:
-            raise ValueError(f"Model type {self.model_type} not supported for consensus averaging.")

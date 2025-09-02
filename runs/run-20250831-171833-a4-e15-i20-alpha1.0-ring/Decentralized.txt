@@ -1,0 +1,9 @@
+BasicStatsCalculator('adult', 'CTGAN, 4 Agents 15 Epochs 20 Iterations'): {'mean': 0.017365770467306592, 'median': 0.0008215748294304447, 'var': 0.012252002510878546}
+CorrelationCalculator (Pearson): 0.9891995376702906
+CorrelationCalculator (Spearman): 0.9889871684354197
+
+AdversarialAccuracyCalculator('adult', 'CTGAN, 4 Agents 15 Epochs 20 Iterations'): 0.8243125924036254
+JSCalculator('adult', 'CTGAN, 4 Agents 15 Epochs 20 Iterations'): 0.9614368933006604
+KSCalculator('adult', 'CTGAN, 4 Agents 15 Epochs 20 Iterations'): 0.9720610819875739
+NNDRCalculator('adult', 'CTGAN, 4 Agents 15 Epochs 20 Iterations'): 0.8978990577818751
+SinglingOutCalculator('adult', 'CTGAN, 4 Agents 15 Epochs 20 Iterations'): PrivacyRisk(value=0.11297349278000537, ci=(0.08549141515660309, 0.14045557040340767))

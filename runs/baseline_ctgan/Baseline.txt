@@ -1,0 +1,9 @@
+BasicStatsCalculator('adult', 'CTGAN'): {'mean': 0.0148910615305599, 'median': 7.200337325384616e-05, 'var': 0.010322503932997022}
+CorrelationCalculator (Pearson): 0.9927477934071184
+CorrelationCalculator (Spearman): 0.9926205961831734
+
+AdversarialAccuracyCalculator('adult', 'CTGAN'): 0.663281585063564
+JSCalculator('adult', 'CTGAN'): 0.9681350474008188
+KSCalculator('adult', 'CTGAN'): 0.9757997729254919
+NNDRCalculator('adult', 'CTGAN'): 0.7989006473967659
+SinglingOutCalculator('adult', 'Synthetic_Dataset'): PrivacyRisk(value=0.16060752443785087, ci=(0.1286526978644355, 0.19256235101126623))

@@ -44,7 +44,7 @@ class CTGANModel:
         )
         self.weights = self.get_weights()
 
-    def sample(self, num_samples):
+    def sample(self, num_samples, seed=42):
         """
         Generate synthetic samples from the trained CTGAN model.
 
@@ -54,7 +54,7 @@ class CTGANModel:
         Returns:
             pd.DataFrame: Generated synthetic samples.
         """
-        return self.model.sample(num_samples)
+        return self.model.sample(num_samples, random_state=seed)
 
     def get_weights(self):
         """

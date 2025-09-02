@@ -6,7 +6,10 @@ import re
 
 import torch
 
+from DeFeSyn.models.CTGAN.synthesizers.ctgan import CTGAN
+
 REPO_MARKERS = {".git", "pyproject.toml", "poetry.lock", "setup.cfg", "setup.py"}
+torch.serialization.add_safe_globals([CTGAN])
 
 @lru_cache(maxsize=1)
 def get_repo_root(start: str | Path | None = None) -> Path:
@@ -86,3 +89,11 @@ def save_model_pickle(model, path: str | Path, *, keep_discriminator=True) -> No
 
 def load_weights_pt(path: str | Path, device="cpu") -> dict:
     return torch.load(path, map_location=device)
+
+def load_model_pickle(path: str | Path, device="cpu"):
+    model = torch.load(path, map_location="cpu", weights_only=False)
+    try:
+        model.set_device(torch.device(device))
+    except Exception:
+        pass
+    return model

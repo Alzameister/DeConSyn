@@ -525,7 +525,6 @@ class CTGAN(BaseSynthesizer):
                 )
 
         gen_state_dict = self._generator.state_dict()
-        print("Generator state dict keys after training:", gen_state_dict.keys())
 
     @random_state
     def sample(self, n, condition_column=None, condition_value=None):

@@ -59,7 +59,7 @@ class NodeAgent(Agent):
         # --- topology
         self.neighbors: list[str] = list(neighbors or [])
         self.participants: list[str] = self.neighbors + [self.jid]
-        self.active_neighbors: set[str] = set()  # maintained by PresenceBehavior
+        self.active_neighbors: set[str] = set()
 
         # --- data
         self.data: dict[str, pd.DataFrame] = {

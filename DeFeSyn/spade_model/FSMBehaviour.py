@@ -299,7 +299,6 @@ class PushState(BaseState):
                 self.timeout = 1000.0  # seconds
 
             def _peer_available(self) -> bool:
-                # Prefer cached active_neighbors if maintained
                 active = getattr(self.agent, "active_neighbors", None)
                 if isinstance(active, set):
                     return self.peer_jid in active
@@ -420,10 +419,10 @@ class PushState(BaseState):
             node_id=self.agent.id,
             iteration=it,
             phase="model",
-            ext="pt",
+            ext="pkl",
             repo_root=self.agent.repo_dir
         )
-        save_model_pickle(model=self.agent.model.model, path=p.with_suffix(".model.pt"))
+        save_model_pickle(model=self.agent.model.model, path=p)
 
         self.log.info("RESPOND: consensus step applied (eps_i→{:.6f}, used eps_j={:.6f})",
                       self.agent.consensus.get_eps(), eps_j)

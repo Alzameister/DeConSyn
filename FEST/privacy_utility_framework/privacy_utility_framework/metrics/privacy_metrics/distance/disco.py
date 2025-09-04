@@ -25,6 +25,21 @@ class DisclosureCalculator(PrivacyMetricCalculator):
         self.keys = keys
         self.target = target
 
+        # TODO: Adapt keys to transformed data if needed
+        self.keys = []
+        transformed_cols = self.original.transformed_normalized_data.columns
+        for key in keys:
+            for col in transformed_cols:
+                part = col.split('.')[0]
+                if key == part:
+                    self.keys.append(col)
+        for col in transformed_cols:
+            part = col.split('.')[0]
+            if target == part:
+                self.target = col
+                break
+
+
     def _disclosure(self, synthetic, original, keys, target):
         # Dispatch to the appropriate method based on the type of object
         if isinstance(synthetic, pd.DataFrame):
@@ -314,7 +329,6 @@ class DisclosureCalculator(PrivacyMetricCalculator):
                 dd['keys'] = dd[keys[0]]
 
             tab_kts = pd.crosstab(ss["target"], ss['keys'])
-            tab_kts.to_csv('/Users/ksi/Desktop/tab_kts_python.csv')
             tab_ktd = pd.crosstab(dd["target"], dd['keys'])
 
             if print_flag:

@@ -4,7 +4,7 @@ from scipy.spatial import distance
 from sklearn.neighbors import NearestNeighbors
 from tqdm import tqdm
 
-from privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics import PrivacyMetricCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics import PrivacyMetricCalculator
 
 
 class AdversarialAccuracyCalculator(PrivacyMetricCalculator):

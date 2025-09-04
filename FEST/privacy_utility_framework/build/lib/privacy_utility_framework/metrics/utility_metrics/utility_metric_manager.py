@@ -1,6 +1,6 @@
 from typing import Union, List, Dict
 
-from privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics import UtilityMetricCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics import UtilityMetricCalculator
 
 
 class UtilityMetricManager:

@@ -1,7 +1,7 @@
 from abc import ABC, abstractmethod
 import pandas as pd
 
-from privacy_utility_framework.privacy_utility_framework.dataset.dataset import DatasetManager
+from FEST.privacy_utility_framework.privacy_utility_framework.dataset.dataset import DatasetManager
 
 
 class PrivacyMetricCalculator(ABC):
@@ -103,3 +103,14 @@ class PrivacyMetricCalculator(ABC):
         # Store transformed and normalized datasets in attributes
         self.original = manager.original_dataset
         self.synthetic = manager.synthetic_dataset
+
+        # TODO: Store the categorical data's modes
+        # Select categorical columns from the original dataset
+        # Store keys for each categorical column, with int = 0
+        self.original.categorical_modes = {col: 0 for col in self.original.categorical_columns}
+        # In the transformed set, strip before the dot, e.g., colname.0 -> colname and check if its an existing column
+        for col in self.original.transformed_data.columns:
+            if '.' in col:
+                base_col = col.split('.')[0]
+                if base_col in self.original.categorical_columns:
+                    self.original.categorical_modes[base_col] += 1

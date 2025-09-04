@@ -1,6 +1,6 @@
 from typing import Union, List, Dict
 
-from privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics import PrivacyMetricCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics import PrivacyMetricCalculator
 
 
 class PrivacyMetricManager:

@@ -1,7 +1,7 @@
 from abc import abstractmethod, ABC
 import pandas as pd
 
-from privacy_utility_framework.privacy_utility_framework.dataset.dataset import DatasetManager
+from FEST.privacy_utility_framework.privacy_utility_framework.dataset.dataset import DatasetManager
 
 
 class UtilityMetricCalculator(ABC):

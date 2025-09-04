@@ -2,7 +2,7 @@ import numpy as np
 import pandas as pd
 from scipy.spatial import distance
 
-from privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics import PrivacyMetricCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics import PrivacyMetricCalculator
 
 
 class NNDRCalculator(PrivacyMetricCalculator):

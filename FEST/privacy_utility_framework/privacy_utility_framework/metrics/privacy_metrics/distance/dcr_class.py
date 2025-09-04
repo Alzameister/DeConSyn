@@ -2,7 +2,7 @@ import numpy as np
 from scipy.spatial import distance
 import pandas as pd
 
-from privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics import PrivacyMetricCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics import PrivacyMetricCalculator
 
 
 # DONE
@@ -46,8 +46,11 @@ class DCRCalculator(PrivacyMetricCalculator):
         # Retrieve transformed and normalized data
         original = self.original.transformed_normalized_data
         synthetic = self.synthetic.transformed_normalized_data
+        self.calculate_weights()
 
         # Apply feature weights to both datasets
+        # TODO Check why bug exists with Supervisor
+        # TODO: Set categorical weights to distribution-based weights
         weighted_original_data = original * self.weights
         weighted_synthetic_data = synthetic * self.weights
 
@@ -66,3 +69,23 @@ class DCRCalculator(PrivacyMetricCalculator):
             metric (str): The distance metric to use in DCR calculation.
         """
         self.distance_metric = metric
+
+    def calculate_weights(self):
+        """
+        Calculates and sets feature weights based on their distribution in the original dataset.
+        Categorical features are weighted inversely proportional to their frequency.
+        """
+        original = self.original.data
+        original_transformed = self.original.transformed_data
+        cat_cols = self.original.categorical_columns
+        cat_modes = self.original.categorical_modes
+        self.weights = np.ones(original_transformed.shape[1])
+
+        for i, col in enumerate(original_transformed.columns):
+            if "." in col:  # One-hot encoded categorical column
+                base_col = col.split(".")[0]
+                if base_col in cat_cols:
+                    freq = cat_modes[base_col]
+                    self.weights[i] = 1 / freq if freq > 0 else 1
+            else:  # Numeric column
+                self.weights[i] = 1.0  # Equal weight for numeric columns

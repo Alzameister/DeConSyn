@@ -15,6 +15,7 @@ class Dataset:
         """
         self.data = data
         self.name = name
+        self.categorical_columns = None
         self.scaler = None
         self.transformer = None
         self.transformed_data = None
@@ -30,8 +31,8 @@ class Dataset:
         self.transformer.detect_initial_config(data=self.data)
         config = self.transformer.get_config()
 
-        categorical_columns = self.data.select_dtypes(include=['object', 'category']).columns
-        config['transformers'].update({col: OneHotEncoder() for col in categorical_columns})
+        self.categorical_columns = self.data.select_dtypes(include=['object', 'category']).columns
+        config['transformers'].update({col: OneHotEncoder() for col in self.categorical_columns})
 
         # Fit transformer to the original dataset
         self.transformer.fit(self.data)

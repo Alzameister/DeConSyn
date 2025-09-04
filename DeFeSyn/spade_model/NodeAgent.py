@@ -56,10 +56,15 @@ class NodeAgent(Agent):
         self.max_iterations: int = cfg.max_iterations
         self.current_iteration: int = 0
 
+        # logging
+        self.log = logger.bind(node_id=self.id, jid=self.jid)
+        self.event = self.log.bind(stream="event")
+
         # --- topology
         self.neighbors: list[str] = list(neighbors or [])
         self.participants: list[str] = self.neighbors + [self.jid]
         self.active_neighbors: set[str] = set()
+        self.log.info("Neighbors: {}", self.neighbors)
 
         # --- data
         self.data: dict[str, pd.DataFrame] = {
@@ -81,10 +86,6 @@ class NodeAgent(Agent):
         self.model = None  # CTGANModel instance after first TRAIN
         self.weights: dict = {}  # latest local weights
         self.loss_values = pd.DataFrame(columns=["Epoch", "Generator Loss", "Discriminator Loss"])
-
-        # logging
-        self.log = logger.bind(node_id=self.id, jid=self.jid)
-        self.event = self.log.bind(stream="event")
 
 
     async def setup(self):

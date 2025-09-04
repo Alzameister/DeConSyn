@@ -19,6 +19,9 @@ class PresenceBehaviour(CyclicBehaviour):
     async def on_start(self):
         a = self.agent
         a.log.info("PresenceBehavior: starting; subscribing to declared neighbors...")
+        if not hasattr(a, "active_neighbors"):
+            a.active_neighbors = set()
+
         for jid in getattr(a, "neighbors", []):
             try:
                 a.presence.subscribe(jid)
@@ -52,15 +55,29 @@ class PresenceBehaviour(CyclicBehaviour):
 
     async def _on_unsubscribed(self, jid):
         self.agent.log.info("Presence: unsubscribed by {}", jid)
-        await self._mark_change()
 
     async def _on_available(self, jid):
-        self.agent.log.info("Presence: {} is AVAILABLE", jid)
-        await self._mark_change()
+        a = self.agent
+        jid_str = self._strip_jid(jid)
+
+        if hasattr(a, "neighbors") and a.neighbors:
+            if jid_str not in set(map(str, a.neighbors)):
+                a.log.warning("Presence: AVAILABLE from non-neighbor {}; ignoring", jid_str)
+                return
+
+        if jid_str not in a.active_neighbors:
+            a.active_neighbors.add(jid_str)
+            a.log.info("Presence: {} is now AVAILABLE", jid_str)
+            await self._report_active()
 
     async def _on_unavailable(self, jid):
-        self.agent.log.info("Presence: {} is UNAVAILABLE", jid)
-        await self._mark_change()
+        a = self.agent
+        jid_str = self._strip_jid(jid)
+
+        if jid_str in a.active_neighbors:
+            a.active_neighbors.remove(jid_str)
+            a.log.info("Presence: {} went UNAVAILABLE", jid_str)
+            await self._report_active()
 
     # ---------- internals ----------
 
@@ -89,3 +106,25 @@ class PresenceBehaviour(CyclicBehaviour):
                 "Presence: active_neighbors={} | degree={} | eps_i={}",
                 sorted(list(active)), deg, f"{eps:.6f}" if eps is not None else "n/a"
             )
+
+    async def _report_active(self):
+        a = self.agent
+        deg = len(a.active_neighbors)
+
+        # Update consensus degree
+        try:
+            a.consensus.set_degree(deg)
+            eps = float(a.consensus.get_eps())
+        except Exception:
+            eps = None
+
+        a.log.info(
+            "Presence: active_neighbors={} | degree={} | eps_i={}",
+            sorted(list(a.active_neighbors)), deg, f"{eps:.6f}" if eps is not None else "n/a"
+        )
+
+    # ---------- utils ----------
+
+    @staticmethod
+    def _strip_jid(jid) -> str:
+        return str(jid).split("/")[0]

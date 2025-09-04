@@ -73,7 +73,9 @@ class BaseState(State, ABC):
         # PresenceBehavior maintains this set; fallback to presence contacts if missing.
         active = getattr(self.agent, "active_neighbors", None)
         if isinstance(active, set):
+            print("active", active)
             return active
+        print("presence")
         contacts = self.agent.presence.get_contacts()
         return {str(jid) for jid, c in contacts.items() if c.is_available()}
 

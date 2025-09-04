@@ -23,23 +23,6 @@ def build_neighbors(n: int) -> dict[int, list[str]]:
         for i in range(n)
     }
 
-def delete_agent_rest(host: str, username: str, admin_user: str, admin_pass: str, use_https: bool = False) -> None:
-    """
-    Delete a user via Openfire REST API plugin.
-    host: hostname or host:port (port defaults: 9091 for HTTPS, 9090 for HTTP if plugin configured)
-    """
-    scheme = "https" if use_https else "http"
-    # REST plugin usually listens on the admin port (9090 http / 9091 https); adjust if proxied.
-    if ":" not in host:
-        host = f"{host}:{9091 if use_https else 9090}"
-    url = f"{scheme}://{host}/plugins/restapi/v1/users/{username}"
-    resp = requests.delete(url, auth=HTTPBasicAuth(admin_user, admin_pass), timeout=10, verify=use_https)
-    if resp.status_code in (200, 201, 204):
-        return
-    if resp.status_code == 404:
-        raise ValueError(f"user '{username}' not found")
-    raise RuntimeError(f"delete failed ({resp.status_code}): {resp.text}")
-
 async def shutdown_agents(agents: list[NodeAgent]) -> None:
     # 1) announce we're going offline
     for a in agents:
@@ -91,14 +74,6 @@ async def epoch_experiments():
     neighbors_map = build_neighbors(NR_AGENTS)
 
     for e, m in zip(EPOCHS, MAX_ITERATIONS):
-        # Delete old agents if they exist (avoid "conflict" errors on restart)
-        for i in range(NR_AGENTS):
-            try:
-                delete_agent_rest("localhost", agent_jid(i).split("@")[0], "admin", "admin", use_https=False)
-                logger.info(f"Deleted old user {agent_jid(i)}")
-            except Exception as ex:
-                logger.debug(f"Could not delete old user {agent_jid(i)}: {ex}")
-
         run_id = init_logging(level="INFO")
         logger.info(f"Starting experiment with EPOCHS={e}, MAX_ITERATIONS={m}")
 
@@ -136,7 +111,6 @@ async def epoch_experiments():
         finally:
             await shutdown_agents(agents)
             logger.info("Agents stopped cleanly.")
-
 
 async def main():
     run_id = init_logging(level="INFO")

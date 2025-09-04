@@ -1,5 +1,5 @@
 from pathlib import Path
-from typing import List, Dict, Union
+from typing import List, Dict, Union, Tuple
 
 from matplotlib import pyplot as plt
 import numpy as np
@@ -7,33 +7,52 @@ import pandas as pd
 import seaborn as sns
 
 from DeFeSyn.data.DataLoader import DatasetLoader
-from DeFeSyn.metrics.FEST.metrics.privacy_metrics.attacks.singlingout_class import SinglingOutCalculator
-from DeFeSyn.metrics.FEST.metrics.privacy_metrics.distance.adversarial_accuracy_class import AdversarialAccuracyCalculator
-from DeFeSyn.metrics.FEST.metrics.privacy_metrics.distance.dcr_class import DCRCalculator
-from DeFeSyn.metrics.FEST.metrics.privacy_metrics.distance.nndr_class import NNDRCalculator
-from DeFeSyn.metrics.FEST.metrics.privacy_metrics.privacy_metric_manager import PrivacyMetricManager
-from DeFeSyn.metrics.FEST.metrics.utility_metrics.statistical.basic_stats import BasicStatsCalculator
-from DeFeSyn.metrics.FEST.metrics.utility_metrics.statistical.correlation import CorrelationMethod, CorrelationCalculator
-from DeFeSyn.metrics.FEST.metrics.utility_metrics.statistical.js_similarity import JSCalculator
-from DeFeSyn.metrics.FEST.metrics.utility_metrics.statistical.ks_test import KSCalculator
-from DeFeSyn.metrics.FEST.metrics.utility_metrics.utility_metric_manager import UtilityMetricManager
 from DeFeSyn.spade_model.start import ADULT_MANIFEST, ADULT_PATH
 from DeFeSyn.utils.io import load_model_pickle
+from FEST.privacy_utility_framework.build.lib.privacy_utility_framework.metrics.privacy_metrics.privacy_metric_manager import \
+    PrivacyMetricManager
+from FEST.privacy_utility_framework.build.lib.privacy_utility_framework.metrics.utility_metrics.utility_metric_manager import \
+    UtilityMetricManager
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.attacks.inference_class import \
+    InferenceCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.attacks.linkability_class import \
+    LinkabilityCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.attacks.singlingout_class import \
+    SinglingOutCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.distance.adversarial_accuracy_class import \
+    AdversarialAccuracyCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.distance.dcr_class import \
+    DCRCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.distance.disco import \
+    DisclosureCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.distance.nndr_class import \
+    NNDRCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.basic_stats import \
+    BasicStatsCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.correlation import \
+    CorrelationMethod, CorrelationCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.js_similarity import \
+    JSCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.ks_test import \
+    KSCalculator
 
 
 class SynEvaluator:
     """
-        Minimal evaluator:
+        Dataset evaluator for synthetic data.:
         - Loads train/test via DatasetLoader(manifest_path)
         - Loads pickled model and samples |train| synthetic rows
         - Drops NaNs and (if exists) filters workclass != 'Never-worked'
         - Runs selected metrics and saves results under output_dir
         Supported metric names:
-          Privacy:  "NNDR", "AdversarialAccuracy", "SinglingOut"
-          Utility:  "BasicStats", "JS", "KS"
-          Extras:   "CorrelationPearson", "CorrelationSpearman", "PCA2D"
+            Privacy: DCR, NNDR, AdversarialAccuracy, SinglingOut, Inference, Linkability, Disclosure
+            Utility: BasicStats, JS, KS
+            Extras: CorrelationPearson, CorrelationSpearman, PCA
         """
     def __init__(self, manifest_path: str, model_path: str, output_dir: str,
+                 metrics: List[str] = None, keys: List[str] = None, target: str = None,
+                 inf_aux_cols: List[str] = None, secret: str = None, regression: bool = False,
+                 link_aux_cols: Tuple[List[str], List[str]] = None, control_frac: float = 0.3,
                  original_name: str = "adult", synthetic_name: str = "CTGAN"):
         self.seed = 42
         self.manifest_path = manifest_path
@@ -43,7 +62,30 @@ class SynEvaluator:
         self.original_name = original_name
         self.synthetic_name = synthetic_name
 
-    def run(self, metrics: List[str]) -> Dict[str, Dict[str, Union[float, dict, str]]]:
+        self.metrics = metrics if metrics is not None else [
+            "DCR", "NNDR", "AdversarialAccuracy", "SinglingOut", "Inference", "Linkability", "Disclosure",
+            "BasicStats", "JS", "KS",
+            "CorrelationPearson", "CorrelationSpearman", "PCA"
+        ]
+        # Disclosure
+        self.keys = keys
+        self.target = target
+        if self.keys is None or self.target is None and "Disclosure" in self.metrics:
+            raise ValueError("Keys and target must be provided for Disclosure metric.")
+        # Inference
+        self.inf_aux_cols = inf_aux_cols
+        self.secret = secret
+        self.regression = regression
+        if self.inf_aux_cols is None or self.secret is None and "Inference" in self.metrics:
+            raise ValueError("Auxiliary columns and secret must be provided for Inference metric.")
+        # Linkability
+        self.link_aux_cols = link_aux_cols
+        self.control_frac = control_frac
+        if self.link_aux_cols is None and "Linkability" in self.metrics:
+            raise ValueError("Auxiliary columns must be provided for Linkability metric.")
+
+
+    def evaluate(self) -> Dict[str, Dict[str, Union[float, dict, str]]]:
         loader = DatasetLoader(self.manifest_path)
         full_train = loader.get_train()
         model = load_model_pickle(Path(self.model_path))
@@ -61,7 +103,7 @@ class SynEvaluator:
 
         # ---- Privacy
         print("Running privacy metrics...")
-        for name in metrics:
+        for name in self.metrics:
             print(name)
             if name == "DCR":
                 r = self._eval_privacy(DCRCalculator(original=full_train, synthetic=synthetic,
@@ -88,10 +130,37 @@ class SynEvaluator:
                 privacy_res[name] = r
                 self._save_txt(name, r)
                 print(r)
+            elif name == "Inference":
+                r = self._eval_privacy(
+                    InferenceCalculator(original=full_train, synthetic=synthetic, aux_cols=self.inf_aux_cols,
+                                        secret=self.secret, regression=self.regression,
+                                        original_name=self.original_name, synthetic_name=self.synthetic_name))
+                privacy_res[name] = r
+                self._save_txt(name, r)
+                print(r)
+            elif name == "Linkability":
+                control_frac = 0.3
+                link_control_df = full_train.sample(frac=control_frac, random_state=self.seed)
+                link_original_train_df = full_train.drop(link_control_df.index).reset_index(drop=True)
+                link_control_df = link_control_df.reset_index(drop=True)
+                r = self._eval_privacy(LinkabilityCalculator(original=link_original_train_df, synthetic=synthetic,
+                                                            aux_cols=self.link_aux_cols, control=link_control_df,
+                                                            original_name=self.original_name, synthetic_name=self.synthetic_name))
+                privacy_res[name] = r
+                self._save_txt(name, r)
+                print(r)
+            elif name == "Disclosure":
+                r = self._eval_privacy(
+                    DisclosureCalculator(original=full_train, synthetic=synthetic, keys=self.keys, target=self.target,
+                                        original_name=self.original_name, synthetic_name=self.synthetic_name))
+                privacy_res[name] = r
+                self._save_txt(name, r)
+                print(r)
+
 
         # ---- Utility
         print("Running utility metrics...")
-        for name in metrics:
+        for name in self.metrics:
             print(name)
             if name == "BasicStats":
                 r = self._eval_utility(
@@ -101,7 +170,6 @@ class SynEvaluator:
                 self._save_txt(name, r)
                 print(r)
             elif name == "JS":
-                r = self._eval_utility()
                 r = self._eval_utility(JSCalculator(original=full_train, synthetic=synthetic,
                                                     original_name=self.original_name, synthetic_name=self.synthetic_name))
                 utility_res[name] = r
@@ -115,19 +183,23 @@ class SynEvaluator:
                 print(r)
 
         # ---- Extras
-        if "CorrelationPearson" in metrics:
+        if "CorrelationPearson" in self.metrics:
             print("  CorrelationPearson...")
             artifacts.update(
-                self._export_correlations(full_train, synthetic, CorrelationMethod.PEARSON, "CorrelationPearson"))
-        if "CorrelationSpearman" in metrics:
+                self._correlation(full_train, synthetic, CorrelationMethod.PEARSON, "CorrelationPearson"))
+        if "CorrelationSpearman" in self.metrics:
             print("  CorrelationSpearman...")
             artifacts.update(
-                self._export_correlations(full_train, synthetic, CorrelationMethod.SPEARMAN, "CorrelationSpearman"))
-        if "PCA" in metrics:
+                self._correlation(full_train, synthetic, CorrelationMethod.SPEARMAN, "CorrelationSpearman"))
+        if "PCA" in self.metrics:
             print("  PCA...")
-            artifacts["PCA"] = str(self._export_pca(full_train, synthetic))
+            artifacts["PCA"] = str(self._pca(full_train, synthetic))
 
-        return {"privacy": privacy_res, "utility": utility_res, "artifacts": artifacts}
+        result =  {"privacy": privacy_res, "utility": utility_res, "artifacts": artifacts}
+        p = self.output_dir / "results.txt"
+        with open(p, "w", encoding="utf-8") as f:
+            f.write(str(result))
+        return result
 
     # --- helpers ---
     @staticmethod
@@ -142,7 +214,7 @@ class SynEvaluator:
         m.add_metric(metric)
         return m.evaluate_all()
 
-    def _export_correlations(self, full_train, synthetic, method: CorrelationMethod, label: str) -> Dict[str, str]:
+    def _correlation(self, full_train, synthetic, method: CorrelationMethod, label: str) -> Dict[str, str]:
         metric = CorrelationCalculator(full_train, synthetic, self.original_name, self.synthetic_name)
         score = metric.evaluate(method=method)
         with open(self.output_dir / f"{label}_result.txt", "w") as f:
@@ -176,7 +248,7 @@ class SynEvaluator:
             f"{label}_syn_heatmap": str(p2),
         }
 
-    def _export_pca(self, full_train, synthetic) -> Path:
+    def _pca(self, full_train, synthetic) -> Path:
         from sklearn.decomposition import PCA
         combined = pd.concat([full_train, synthetic], ignore_index=True)
         X = combined.select_dtypes(include=[np.number]).fillna(0)
@@ -204,16 +276,43 @@ class SynEvaluator:
 
 if __name__ == "__main__":
     path = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/runs/run-20250831-171833-a4-e15-i20-alpha1.0-ring"
+
+    metrics = [
+        "Disclosure",
+        "BasicStats", "JS", "KS",
+        "CorrelationPearson", "CorrelationSpearman", "PCA"
+    ]
+    #metrics = ["AdversarialAccuracy", "SinglingOut", "Inference", "Linkability", "Disclosure"]
+
+    # Disclosure settings
+    keys = ["age", "sex", "marital-status", "education", "occupation", "hours-per-week", "workclass",
+                 "native-country"]
+    target = "income"
+    # Inferential attack settings
+    inf_aux_cols = ['age', 'sex', 'race', 'relationship', 'education', 'occupation', 'workclass', 'native-country']
+    secret = 'income'
+    regression = False
+
+    # Linkability settings
+    link_aux_cols = (
+        ["age", "sex", "race", "marital-status", "native-country"],  # set A
+        ["education", "workclass", "occupation", "hours-per-week"]  # set B
+    )
+
     evaluator = SynEvaluator(
         manifest_path=f"{ADULT_PATH}/{ADULT_MANIFEST}",
         model_path=path + "/agent_00/iter-00020-model.pkl",
         output_dir=path,
         original_name="adult",
-        synthetic_name="CTGAN",
+        synthetic_name="CTGAN 4 Agents 15 Epochs 20 Iterations Ring",
+        metrics=metrics,
+        keys=keys,
+        target=target,
+        inf_aux_cols=inf_aux_cols,
+        secret=secret,
+        regression=regression,
+        link_aux_cols=link_aux_cols,
+        control_frac=0.3,
     )
-    results = evaluator.run([
-        "DCR", "NNDR", "AdversarialAccuracy", "SinglingOut",
-        "BasicStats", "JS", "KS",
-        "CorrelationPearson", "CorrelationSpearman", "PCA",
-    ])
+    results = evaluator.evaluate()
     print(results)

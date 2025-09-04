@@ -1,3 +1,5 @@
+import argparse
+import sys
 from pathlib import Path
 from typing import List, Dict, Union, Tuple
 
@@ -46,8 +48,8 @@ class SynEvaluator:
         - Runs selected metrics and saves results under output_dir
         Supported metric names:
             Privacy: DCR, NNDR, AdversarialAccuracy, SinglingOut, Inference, Linkability, Disclosure
-            Utility: BasicStats, JS, KS
-            Extras: CorrelationPearson, CorrelationSpearman, PCA
+            Utility: BasicStats, JS, KS, CorrelationPearson, CorrelationSpearman,
+            Extras: PCA
         """
     def __init__(self, manifest_path: str, model_path: str, output_dir: str,
                  metrics: List[str] = None, keys: List[str] = None, target: str = None,
@@ -67,23 +69,25 @@ class SynEvaluator:
             "BasicStats", "JS", "KS",
             "CorrelationPearson", "CorrelationSpearman", "PCA"
         ]
+
         # Disclosure
         self.keys = keys
         self.target = target
-        if self.keys is None or self.target is None and "Disclosure" in self.metrics:
+        if "Disclosure" in self.metrics and (self.keys is None or self.target is None):
             raise ValueError("Keys and target must be provided for Disclosure metric.")
+
         # Inference
         self.inf_aux_cols = inf_aux_cols
         self.secret = secret
         self.regression = regression
-        if self.inf_aux_cols is None or self.secret is None and "Inference" in self.metrics:
+        if "Inference" in self.metrics and (self.inf_aux_cols is None or self.secret is None):
             raise ValueError("Auxiliary columns and secret must be provided for Inference metric.")
+
         # Linkability
         self.link_aux_cols = link_aux_cols
         self.control_frac = control_frac
-        if self.link_aux_cols is None and "Linkability" in self.metrics:
+        if "Linkability" in self.metrics and self.link_aux_cols is None:
             raise ValueError("Auxiliary columns must be provided for Linkability metric.")
-
 
     def evaluate(self) -> Dict[str, Dict[str, Union[float, dict, str]]]:
         loader = DatasetLoader(self.manifest_path)
@@ -274,45 +278,156 @@ class SynEvaluator:
             else:
                 f.write(f"value: {result}\n")
 
-if __name__ == "__main__":
-    path = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/runs/run-20250831-171833-a4-e15-i20-alpha1.0-ring"
+def _csv_list(s: str) -> List[str]:
+    return [x.strip() for x in s.split(",")] if s else []
 
-    metrics = [
-        "Disclosure",
-        "BasicStats", "JS", "KS",
-        "CorrelationPearson", "CorrelationSpearman", "PCA"
-    ]
-    #metrics = ["AdversarialAccuracy", "SinglingOut", "Inference", "Linkability", "Disclosure"]
-
-    # Disclosure settings
-    keys = ["age", "sex", "marital-status", "education", "occupation", "hours-per-week", "workclass",
-                 "native-country"]
-    target = "income"
-    # Inferential attack settings
-    inf_aux_cols = ['age', 'sex', 'race', 'relationship', 'education', 'occupation', 'workclass', 'native-country']
-    secret = 'income'
-    regression = False
-
-    # Linkability settings
-    link_aux_cols = (
-        ["age", "sex", "race", "marital-status", "native-country"],  # set A
-        ["education", "workclass", "occupation", "hours-per-week"]  # set B
+def cli(argv: List[str] = None) -> int:
+    parser = argparse.ArgumentParser(
+        description="Evaluate synthetic data privacy & utility metrics."
     )
+
+    # Required-ish (with sensible defaults)
+    parser.add_argument("--manifest-path", required=True,
+                        help="Path to dataset manifest (e.g., ADULT_MANIFEST).")
+    parser.add_argument("--model-path", required=True,
+                        help="Path to pickled generative model (.pkl).")
+    parser.add_argument("--output-dir", required=True,
+                        help="Directory to write results/artifacts.")
+
+    # Labels
+    parser.add_argument("--original-name", default="adult",
+                        help="Name label for the original dataset.")
+    parser.add_argument("--synthetic-name", default="CTGAN",
+                        help="Name label for the synthetic dataset.")
+
+    # Metrics
+    parser.add_argument(
+        "--metrics",
+        type=_csv_list,
+        default=["DCR", "NNDR", "AdversarialAccuracy", "SinglingOut", "Inference",
+                 "Linkability", "Disclosure", "BasicStats", "JS", "KS",
+                 "CorrelationPearson", "CorrelationSpearman", "PCA"],
+        help=("Comma-separated metric names to run. Supported: "
+              "DCR, NNDR, AdversarialAccuracy, SinglingOut, Inference, Linkability, Disclosure, "
+              "BasicStats, JS, KS, CorrelationPearson, CorrelationSpearman, PCA")
+    )
+
+    # Disclosure
+    parser.add_argument("--keys", type=_csv_list, default=[],
+                        help="Comma-separated quasi-identifier keys for Disclosure.")
+    parser.add_argument("--target", default=None,
+                        help="Target/secret column for Disclosure.")
+
+    # Inference
+    parser.add_argument("--inf-aux-cols", type=_csv_list, default=[],
+                        help="Comma-separated auxiliary columns for Inference.")
+    parser.add_argument("--secret", default=None,
+                        help="Secret column (target) for Inference.")
+    parser.add_argument("--regression", action="store_true",
+                        help="Treat Inference secret as regression.")
+
+    # Linkability
+    parser.add_argument("--link-a", type=_csv_list, default=[],
+                        help="Comma-separated set A auxiliary columns for Linkability.")
+    parser.add_argument("--link-b", type=_csv_list, default=[],
+                        help="Comma-separated set B auxiliary columns for Linkability.")
+    parser.add_argument("--control-frac", type=float, default=0.3,
+                        help="Control fraction for Linkability (0-1).")
+
+    # Misc
+    parser.add_argument("--seed", type=int, default=42, help="Random seed.")
+
+    args = parser.parse_args(argv)
+
+    # Validate conditional requirements
+    orig_metrics = args.metrics
+    selected = set([m.lower() for m in args.metrics])
+
+    def want(name: str) -> bool:
+        return name.lower() in selected
+
+    # Build linkability aux tuple if needed
+    link_aux_cols = None
+    if want("linkability"):
+        if not args.link_a or not args.link_b:
+            print("ERROR: --link-a and --link-b are required when running Linkability.", file=sys.stderr)
+            return 2
+        link_aux_cols = (args.link_a, args.link_b)
+
+    # Disclosure requirements
+    if want("disclosure"):
+        if not args.keys or not args.target:
+            print("ERROR: --keys and --target are required when running Disclosure.", file=sys.stderr)
+            return 2
+
+    # Inference requirements
+    if want("inference"):
+        if not args.inf_aux_cols or not args.secret:
+            print("ERROR: --inf-aux-cols and --secret are required when running Inference.", file=sys.stderr)
+            return 2
 
     evaluator = SynEvaluator(
-        manifest_path=f"{ADULT_PATH}/{ADULT_MANIFEST}",
-        model_path=path + "/agent_00/iter-00020-model.pkl",
-        output_dir=path,
-        original_name="adult",
-        synthetic_name="CTGAN 4 Agents 15 Epochs 20 Iterations Ring",
-        metrics=metrics,
-        keys=keys,
-        target=target,
-        inf_aux_cols=inf_aux_cols,
-        secret=secret,
-        regression=regression,
+        manifest_path=args.manifest_path,
+        model_path=args.model_path,
+        output_dir=args.output_dir,
+        original_name=args.original_name,
+        synthetic_name=args.synthetic_name,
+        metrics=orig_metrics if args.metrics else None,
+        keys=args.keys if args.keys else None,
+        target=args.target,
+        inf_aux_cols=args.inf_aux_cols if args.inf_aux_cols else None,
+        secret=args.secret,
+        regression=bool(args.regression),
         link_aux_cols=link_aux_cols,
-        control_frac=0.3,
+        control_frac=args.control_frac,
     )
+
+    # Optional: set seed if you also want to seed numpy/py modules consistently inside evaluate()
+    evaluator.seed = args.seed
+
     results = evaluator.evaluate()
+    print("\n========= SUMMARY =========")
     print(results)
+    return 0
+
+if __name__ == "__main__":
+    raise SystemExit(cli())
+
+# if __name__ == "__main__":
+#     path = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/runs/baseline_ctgan"
+#     model_path = path + "/ctgan_adult_default.pkl"
+#
+#     #metrics = ["AdversarialAccuracy", "SinglingOut", "Inference", "Linkability", "Disclosure"]
+#
+#     # Disclosure settings
+#     keys = ["age", "sex", "marital-status", "education", "occupation", "hours-per-week", "workclass",
+#                  "native-country"]
+#     target = "income"
+#     # Inferential attack settings
+#     inf_aux_cols = ['age', 'sex', 'race', 'relationship', 'education', 'occupation', 'workclass', 'native-country']
+#     secret = 'income'
+#     regression = False
+#
+#     # Linkability settings
+#     link_aux_cols = (
+#         ["age", "sex", "race", "marital-status", "native-country"],  # set A
+#         ["education", "workclass", "occupation", "hours-per-week"]  # set B
+#     )
+#
+#     evaluator = SynEvaluator(
+#         manifest_path=f"{ADULT_PATH}/{ADULT_MANIFEST}",
+#         model_path=model_path,
+#         output_dir=path,
+#         original_name="adult",
+#         synthetic_name="CTGAN 4 Agents 15 Epochs 20 Iterations Ring",
+#         #metrics=metrics,
+#         keys=keys,
+#         target=target,
+#         inf_aux_cols=inf_aux_cols,
+#         secret=secret,
+#         regression=regression,
+#         link_aux_cols=link_aux_cols,
+#         control_frac=0.3,
+#     )
+#     results = evaluator.evaluate()
+#     print(results)

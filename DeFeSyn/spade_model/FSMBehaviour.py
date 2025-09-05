@@ -91,6 +91,7 @@ class BaseState(State, ABC):
 
 class StartState(BaseState):
     async def run(self):
+        await asyncio.sleep(5.0)  # wait for PresenceBehavior to populate active_neighbors
         neighbors = list(getattr(self.agent, "neighbors", []))
         token = f"barrier-{self.agent.id}-{uuid.uuid4().hex[:6]}"
 
@@ -173,12 +174,14 @@ class TrainingState(BaseState):
         self.log.info("TRAIN: CTGAN epochs={} | discrete_cols={}", self._epochs, discrete_cols)
 
         if not self.agent.model:
-            self.log.info("TRAIN: init CTGAN model")
+            self.agent.log.info("TRAIN: init CTGAN model (device={})", self.agent.device)
             self.agent.model = CTGANModel(
                 full_data=self._data.get("full_train"),
                 data=data,
                 discrete_columns=discrete_cols,
                 epochs=self._epochs,
+                verbose=True,
+                device=self.agent.device
             )
 
         if self.agent.weights:
@@ -259,6 +262,8 @@ class PullState(BaseState):
                 x_j=received_weights,
                 eps_j=eps_j,
             )
+            if self.agent.model:
+                self.agent.model.load_weights(self.agent.weights)
 
             consumed.append({
                 "neighbor": str(msg.sender),
@@ -405,6 +410,8 @@ class PushState(BaseState):
             x_j=received_weights,
             eps_j=eps_j,
         )
+        if self.agent.model:
+            self.agent.model.load_weights(self.agent.weights)
 
         # persist snapshot
         p = make_path(

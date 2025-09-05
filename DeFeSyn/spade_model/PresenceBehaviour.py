@@ -28,6 +28,11 @@ class PresenceBehaviour(CyclicBehaviour):
             except Exception as e:
                 a.log.warning("PresenceBehavior: subscribe({}) failed: {}", jid, e)
 
+        try:
+            a.presence.set_available()
+        except Exception as e:
+            a.log.warning("PresenceBehavior: set_available() failed: {}", e)
+
         # wire presence callbacks (instant updates)
         a.presence.on_available = lambda jid, *args, **kwargs: asyncio.create_task(self._on_available(jid))
         a.presence.on_unavailable = lambda jid, *args, **kwargs: asyncio.create_task(self._on_unavailable(jid))
@@ -88,23 +93,31 @@ class PresenceBehaviour(CyclicBehaviour):
     async def _recompute_from_roster(self, initial: bool = False):
         a = self.agent
         contacts = a.presence.get_contacts()
-        active = {str(jid) for jid, c in contacts.items() if c.is_available()}
+        active = {
+            self._strip_jid(jid)
+            for jid, c in contacts.items()
+            if c.is_available()
+        }
 
-        if active != self._last_active or initial:
-            self._last_active = active
-            a.active_neighbors = active
-            deg = len(active)
+        # keep only declared neighbors
+        neighbor_set = set(getattr(a, "neighbors", []))
+        active &= neighbor_set
 
-            # Update consensus degree
+        # MERGE (do not drop previously active unless explicitly unavailable)
+        merged = set(a.active_neighbors) | active
+
+        if merged != getattr(self, "_last_active", set()) or initial:
+            self._last_active = set(merged)
+            a.active_neighbors = merged
             try:
-                a.consensus.set_degree(deg)
+                a.consensus.set_degree(len(merged))
                 eps = float(a.consensus.get_eps())
             except Exception:
                 eps = None
-
-            self.agent.log.info(
+            a.log.info(
                 "Presence: active_neighbors={} | degree={} | eps_i={}",
-                sorted(list(active)), deg, f"{eps:.6f}" if eps is not None else "n/a"
+                sorted(merged), len(merged),
+                f"{eps:.6f}" if eps is not None else "n/a"
             )
 
     async def _report_active(self):

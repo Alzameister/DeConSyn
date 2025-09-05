@@ -25,15 +25,28 @@ class CTGANModel:
         self.discrete_columns = discrete_columns
         self.epochs = epochs
         self.verbose = verbose
-        cuda_arg: str | bool = device if isinstance(device, str) and device.startswith("cuda") else False
-
+        if device.startswith("cuda") and torch.cuda.is_available():
+            self.device = torch.device(device)
+            use_cuda_flag = True          # ctgan expects bool
+        else:
+            self.device = torch.device("cpu")
+            use_cuda_flag = False
         self.model = CTGAN(
             epochs=self.epochs,
             verbose=self.verbose,
-            cuda=cuda_arg
+            cuda=use_cuda_flag
         )
         self.weights: dict = {}
 
+
+    def _move_modules(self):
+        # ctgan builds networks before/inside fit; guard attributes
+        G = getattr(self.model, "_generator", None)
+        D = getattr(self.model, "_discriminator", None)
+        if G is not None:
+            G.to(self.device)
+        if D is not None:
+            D.to(self.device)
 
     def train(self):
         """
@@ -46,6 +59,7 @@ class CTGANModel:
             gen_state_dict=self.weights.get('generator', None),
             dis_state_dict=self.weights.get('discriminator', None)
         )
+        self._move_modules()
         self.weights = self.get_weights()
 
     def sample(self, num_samples, seed=42):
@@ -67,9 +81,14 @@ class CTGANModel:
         Returns:
             dict: Weights of the CTGAN model.
         """
+        # Always return to CPU for consensus and communication
+        G = self.model._generator
+        D = self.model._discriminator
         return {
-            'generator': self.model._generator.state_dict(),
-            'discriminator': self.model._discriminator.state_dict()
+            'generator': {k: (v.detach().cpu() if torch.is_tensor(v) else v)
+                          for k, v in G.state_dict().items()},
+            'discriminator': {k: (v.detach().cpu() if torch.is_tensor(v) else v)
+                              for k, v in D.state_dict().items()}
         }
 
     def load_weights(self, weights):
@@ -79,12 +98,12 @@ class CTGANModel:
         Args:
             weights (dict): Weights to load into the model.
         """
-        if 'generator' in weights and 'discriminator' in weights:
-            self.weights = weights
-            self.model._generator.load_state_dict(weights['generator'])
-            self.model._discriminator.load_state_dict(weights['discriminator'])
-        else:
+        if "generator" not in weights or "discriminator" not in weights:
             return
+        self._move_modules()  # ensure modules on target device (GPU if configured)
+        self.model._generator.load_state_dict(weights["generator"])
+        self.model._discriminator.load_state_dict(weights["discriminator"])
+        self.weights = self.get_weights()
 
     def encode(self):
         """Return a JSON-serializable package containing the weights."""

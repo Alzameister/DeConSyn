@@ -2,7 +2,7 @@ import asyncio
 from loguru import logger
 import spade
 
-from DeFeSyn.spade_model.agents.NodeAgent import NodeAgent
+from DeFeSyn.spade.agents.NodeAgent import NodeAgent
 from DeFeSyn.data.DataLoader import DatasetLoader
 from DeFeSyn.logging.logger import init_logging
 from DeFeSyn.metrics.metrics import plot_weights

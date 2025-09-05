@@ -1,24 +1,27 @@
 from pathlib import Path
 
 from DeFeSyn.data.DataLoader import DatasetLoader
-from DeFeSyn.metrics.FEST.metrics.privacy_metrics.attacks.singlingout_class import \
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.attacks.inference_class import InferenceCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.attacks.linkability_class import LinkabilityCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.attacks.singlingout_class import \
     SinglingOutCalculator
-from DeFeSyn.metrics.FEST.metrics.privacy_metrics.distance.adversarial_accuracy_class import \
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.distance.adversarial_accuracy_class import \
     AdversarialAccuracyCalculator
-from DeFeSyn.metrics.FEST.metrics.privacy_metrics.distance.dcr_class import DCRCalculator
-from DeFeSyn.metrics.FEST.metrics.privacy_metrics.distance.nndr_class import NNDRCalculator
-from DeFeSyn.metrics.FEST.metrics.privacy_metrics.privacy_metric_manager import \
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.distance.dcr_class import DCRCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.distance.disco import DisclosureCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.distance.nndr_class import NNDRCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.privacy_metric_manager import \
     PrivacyMetricManager
-from DeFeSyn.metrics.FEST.metrics.utility_metrics.statistical.basic_stats import \
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.basic_stats import \
     BasicStatsCalculator
-from DeFeSyn.metrics.FEST.metrics.utility_metrics.statistical.correlation import \
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.correlation import \
     CorrelationMethod, CorrelationCalculator
-from DeFeSyn.metrics.FEST.metrics.utility_metrics.statistical.js_similarity import \
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.js_similarity import \
     JSCalculator
-from DeFeSyn.metrics.FEST.metrics.utility_metrics.statistical.ks_test import KSCalculator
-from DeFeSyn.metrics.FEST.metrics.utility_metrics.utility_metric_manager import \
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.ks_test import KSCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.utility_metric_manager import \
     UtilityMetricManager
-from DeFeSyn.spade_model.start import ADULT_MANIFEST, ADULT_PATH
+from DeFeSyn.spade.start import ADULT_MANIFEST, ADULT_PATH
 from DeFeSyn.utils.io import load_model_pickle
 
 if __name__ == "__main__":
@@ -67,19 +70,19 @@ if __name__ == "__main__":
     metric_list = [
         # TODO: DCR Buggy
         DCRCalculator(original=full_train, synthetic=synthetic_data, original_name=original_name, synthetic_name=synthetic_name),
-        NNDRCalculator(original=full_train, synthetic=synthetic_data, original_name=original_name, synthetic_name=synthetic_name),
-        AdversarialAccuracyCalculator(original=full_train, synthetic=synthetic_data, original_name=original_name,
-                                      synthetic_name=synthetic_name),
+        #NNDRCalculator(original=full_train, synthetic=synthetic_data, original_name=original_name, synthetic_name=synthetic_name),
+        #AdversarialAccuracyCalculator(original=full_train, synthetic=synthetic_data, original_name=original_name,
+        #                              synthetic_name=synthetic_name),
         # TODO: Disc Error: raise ValueError("keys and target must be variables in data and synthetic data.")
         # DisclosureCalculator(original=full_train, synthetic=synthetic_data, original_name=original_name, synthetic_name=synthetic_name,
         #                      keys=keys, target=target),
-        SinglingOutCalculator(original=full_train, synthetic=synthetic_data, original_name=original_name),
+        #SinglingOutCalculator(original=full_train, synthetic=synthetic_data, original_name=original_name),
         # TODO: Inf Error: Use Categorical Encoder?
-        # InferenceCalculator(original=full_train, synthetic=synthetic_data, aux_cols=inf_aux_cols, secret=secret,
+        #InferenceCalculator(original=full_train, synthetic=synthetic_data, aux_cols=inf_aux_cols, secret=secret,
         #                      regression=regression, original_name=original_name, synthetic_name=synthetic_name),
         # TODO: Link Error: Use Categorical Encoder?
-        # LinkabilityCalculator(original=full_train, synthetic=synthetic_data, original_name=original_name, synthetic_name=synthetic_name,
-        #                      aux_cols=link_aux_cols, control=link_control_df)
+        #LinkabilityCalculator(original=full_train, synthetic=synthetic_data, original_name=original_name, synthetic_name=synthetic_name,
+        #                     aux_cols=link_aux_cols, control=link_control_df)
     ]
 
     for metric in metric_list:

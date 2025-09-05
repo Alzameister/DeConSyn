@@ -9,11 +9,11 @@ from spade.template import Template
 from loguru import logger
 
 from DeFeSyn.consensus.Consensus import Consensus
-from DeFeSyn.spade_model.FSMBehaviour import NodeFSMBehaviour, TRAINING_STATE, StartState, TrainingState, \
+from DeFeSyn.spade.FSMBehaviour import NodeFSMBehaviour, TRAINING_STATE, StartState, TrainingState, \
     PullState, PushState, FinalState
-from DeFeSyn.spade_model.ReceiveBehaviour import BarrierHelloResponder, BarrierAckRouter, ReceiveBehaviour
-from DeFeSyn.spade_model.FSMBehaviour import START_STATE, PULL_STATE, PUSH_STATE, FINAL_STATE
-from DeFeSyn.spade_model.PresenceBehaviour import PresenceBehaviour
+from DeFeSyn.spade.ReceiveBehaviour import BarrierHelloResponder, BarrierAckRouter, ReceiveBehaviour
+from DeFeSyn.spade.FSMBehaviour import START_STATE, PULL_STATE, PUSH_STATE, FINAL_STATE
+from DeFeSyn.spade.PresenceBehaviour import PresenceBehaviour
 from DeFeSyn.utils.io import get_repo_root
 
 

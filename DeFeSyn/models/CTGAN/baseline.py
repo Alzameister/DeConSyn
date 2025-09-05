@@ -1,7 +1,7 @@
 from DeFeSyn.data.DataLoader import DatasetLoader
 from DeFeSyn.models.CTGAN.synthesizers.ctgan import CTGAN
-from DeFeSyn.spade_model.FSMBehaviour import discrete_cols_of
-from DeFeSyn.spade_model.start import ADULT_PATH, ADULT_MANIFEST
+from DeFeSyn.spade.FSMBehaviour import discrete_cols_of
+from DeFeSyn.spade.start import ADULT_PATH, ADULT_MANIFEST
 from DeFeSyn.utils.io import get_repo_root
 
 # Train adult dataset on default CTGAN settings

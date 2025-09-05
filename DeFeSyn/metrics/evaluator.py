@@ -9,7 +9,7 @@ import pandas as pd
 import seaborn as sns
 
 from DeFeSyn.data.DataLoader import DatasetLoader
-from DeFeSyn.spade_model.start import ADULT_MANIFEST, ADULT_PATH
+from DeFeSyn.spade.start import ADULT_MANIFEST, ADULT_PATH
 from DeFeSyn.utils.io import load_model_pickle
 from FEST.privacy_utility_framework.build.lib.privacy_utility_framework.metrics.privacy_metrics.privacy_metric_manager import \
     PrivacyMetricManager

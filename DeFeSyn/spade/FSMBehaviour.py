@@ -7,6 +7,7 @@ from dataclasses import dataclass
 import random
 from typing import Optional, Iterable, Dict, Any
 
+import torch
 from spade.behaviour import FSMBehaviour, State, OneShotBehaviour
 from spade.message import Message
 from spade.template import Template
@@ -187,6 +188,8 @@ class TrainingState(BaseState):
         if self.agent.weights:
             self.log.info("TRAIN: warm start: loading weights")
             self.agent.model.load_weights(self.agent.weights)
+            debug_check_single_weight(self.agent, which="generator")
+            debug_check_single_weight(self.agent, which="discriminator")
         else:
             self.log.info("TRAIN: cold start (no weights)")
 
@@ -450,3 +453,28 @@ class PushState(BaseState):
 class FinalState(BaseState):
     async def run(self):
         self.log.info("FSM completed. Stopping agent.")
+
+def debug_check_single_weight(agent, which="generator"):
+    """
+    Verify one parameter is identical between the CPU snapshot (agent.weights)
+    and the live module on GPU.
+    """
+    assert agent.model is not None, "Model not initialized yet."
+
+    cpu_block = agent.weights[which]
+    param_key = next(k for k, v in cpu_block.items() if torch.is_tensor(v))
+
+    cpu_t = cpu_block[param_key]
+    module = getattr(agent.model.model, f"_{which}")
+    gpu_t = module.state_dict()[param_key]
+
+    cpu_val = cpu_t.view(-1)[0].item()
+    gpu_val = gpu_t.detach().view(-1)[0].item()
+    diff = abs(cpu_val - gpu_val)
+
+    print(f"[WEIGHT-CHECK] {which}.{param_key} "
+          f"device={gpu_t.device} cpu_val={cpu_val:.8f} gpu_val={gpu_val:.8f} diff={diff:.3e}")
+
+    # Strict numeric assertion
+    if not torch.allclose(cpu_t, gpu_t.detach().cpu(), atol=1e-7, rtol=1e-7):
+        raise RuntimeError(f"Mismatch in {which}.{param_key}")

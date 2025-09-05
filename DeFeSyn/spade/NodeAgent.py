@@ -172,7 +172,7 @@ class NodeAgent(Agent):
                 resp.set_metadata("content-type", "application/octet-stream+b64")
                 resp_id = f"resp-{msg_id}"
                 resp.set_metadata("msg_id", resp_id)
-                version_sent = str(getattr(self.agent, "last_committed_version", self.agent.current_iteration))
+                version_sent = str(getattr(self, "last_committed_version", self.current_iteration))
                 resp.set_metadata("version", version_sent)
                 resp.set_metadata("in_reply_to", msg_id)
                 if eps_i is not None:

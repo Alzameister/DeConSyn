@@ -100,7 +100,18 @@ class CTGANModel:
         """
         if "generator" not in weights or "discriminator" not in weights:
             return
-        self._move_modules()  # ensure modules on target device (GPU if configured)
+        self._move_modules()
+
+        gen_ref = self.model._generator.state_dict()
+        for k, v in list(weights["generator"].items()):
+            if torch.is_tensor(v) and k in gen_ref and v.dtype != gen_ref[k].dtype:
+                weights["generator"][k] = v.to(gen_ref[k].dtype)
+
+        dis_ref = self.model._discriminator.state_dict()
+        for k, v in list(weights["discriminator"].items()):
+            if torch.is_tensor(v) and k in dis_ref and v.dtype != dis_ref[k].dtype:
+                weights["discriminator"][k] = v.to(dis_ref[k].dtype)
+
         self.model._generator.load_state_dict(weights["generator"])
         self.model._discriminator.load_state_dict(weights["discriminator"])
         self.weights = self.get_weights()
@@ -112,23 +123,17 @@ class CTGANModel:
             discriminator = self.weights['discriminator']
         except KeyError:
             return None
-        cooked = {
-            'generator': {},
-            'discriminator': {}
-        }
+        cooked = {'generator': {}, 'discriminator': {}}
+
         for k, v in generator.items():
             if torch.is_tensor(v):
                 t = v.detach().cpu()
-                if torch.is_floating_point(t):
-                    t = t.to(torch.float64)
                 cooked['generator'][k] = t
             else:
                 cooked['generator'][k] = v
         for k, v in discriminator.items():
             if torch.is_tensor(v):
                 t = v.detach().cpu()
-                if torch.is_floating_point(t):
-                    t = t.to(torch.float64)
                 cooked['discriminator'][k] = t
             else:
                 cooked['discriminator'][k] = v
@@ -168,6 +173,12 @@ class CTGANModel:
         dis_buffer = io.BytesIO(gzip.decompress(dis_compressed))
         generator = torch.load(gen_buffer, map_location='cpu')
         discriminator = torch.load(dis_buffer, map_location='cpu')
+
+        for blk in (generator, discriminator):
+            for k, v in blk.items():
+                if torch.is_tensor(v) and v.dtype == torch.float64:
+                    blk[k] = v.float()
+
         return {
             'generator': generator,
             'discriminator': discriminator

@@ -12,10 +12,22 @@ from loguru import logger
 from datetime import datetime
 
 
-def init_logging(run_id: str | None = None, level: str = "INFO") -> str:
+def init_logging(run_id: str | None = None,
+                 level: str = "INFO",
+                 agents: int | None = None,
+                 epochs: int | None = None,
+                 iterations: int | None = None) -> str:
     if run_id is None:
         current_time = datetime.now()
-        run_id = f"run-{current_time.strftime('%Y%m%d-%H%M%S')}"
+        parts = []
+        if agents is not None:
+            parts.append(f"{agents}Agents")
+        if epochs is not None:
+            parts.append(f"{epochs}Epochs")
+        if iterations is not None:
+            parts.append(f"{iterations}Iterations")
+        meta = "-" + "-".join(parts) if parts else ""
+        run_id = f"run-{current_time.strftime('%Y%m%d-%H%M%S')}{meta}"
     project_root = Path(__file__).resolve().parent.parent.parent  # Adjust the number of .parent calls based on your directory structure
     log_dir = project_root / "logs" / run_id
     log_dir.mkdir(parents=True, exist_ok=True)

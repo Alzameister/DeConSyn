@@ -207,7 +207,10 @@ async def run_once(
     log_level: str = "INFO",
 ):
     # logging + seed
-    run_id = init_logging(level=log_level.upper())
+    run_id = init_logging(level=log_level.upper(),
+                          agents=nr_agents,
+                          epochs=epochs,
+                          iterations=max_iterations)
     set_global_seed(seed)
 
     # prepare data

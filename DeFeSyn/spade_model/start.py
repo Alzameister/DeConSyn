@@ -10,9 +10,12 @@ from requests.auth import HTTPBasicAuth
 from DeFeSyn.data.DataLoader import DatasetLoader
 from DeFeSyn.logging.logger import init_logging
 from DeFeSyn.spade_model.NodeAgent import NodeAgent, NodeConfig, NodeData
+from DeFeSyn.utils.seed import set_global_seed
 
 ADULT_PATH = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/05_Data/adult"
 ADULT_MANIFEST = "manifest.yaml"
+SEED = 42
+set_global_seed(SEED)
 
 def agent_jid(i: int) -> str:
     return f"agent{i}@localhost"

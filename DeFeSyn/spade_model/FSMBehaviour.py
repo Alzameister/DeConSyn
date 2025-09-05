@@ -382,7 +382,7 @@ class PushState(BaseState):
             neighbor_id=str(peer), msg_id=msg_id, version=int(version), bytes=int(payload_bytes)
         ).info("send")
 
-        await asyncio.sleep(random.uniform(0.2, 0.8))
+        await asyncio.sleep(0.5)
 
         self.log.info("Waiting for RESPOND from {}", peer)
         reply = await fut

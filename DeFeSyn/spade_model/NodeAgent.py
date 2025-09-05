@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
+import torch
 from spade.agent import Agent
 from spade.template import Template
 from loguru import logger
@@ -25,6 +26,7 @@ class NodeConfig:
     max_iterations: int = 10
     alpha: float = 0.5
     run_id: str | None = None
+    device: str = "auto"
 
 @dataclass(frozen=True)
 class NodeData:
@@ -59,6 +61,15 @@ class NodeAgent(Agent):
         # logging
         self.log = logger.bind(node_id=self.id, jid=self.jid)
         self.event = self.log.bind(stream="event")
+
+        if cfg.device == "auto":
+            if torch.cuda.is_available():
+                self.device = "cuda"
+            else:
+                self.device = "cpu"
+        else:
+            self.device = cfg.device
+        self.log.info("Using device: {}", self.device)
 
         # --- topology
         self.neighbors: list[str] = list(neighbors or [])

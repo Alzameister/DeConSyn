@@ -10,7 +10,8 @@ class CTGANModel:
     """
     CTGANModel is a wrapper for the CTGAN synthesizer from the ctgan library.
     """
-    def __init__(self, full_data, data, discrete_columns, epochs, verbose=True):
+    def __init__(self, full_data, data, discrete_columns, epochs, verbose=True,
+                 device: str = "cpu"):
         """
         Initialize the CTGAN model.
 
@@ -24,11 +25,14 @@ class CTGANModel:
         self.discrete_columns = discrete_columns
         self.epochs = epochs
         self.verbose = verbose
+        cuda_arg: str | bool = device if isinstance(device, str) and device.startswith("cuda") else False
+
         self.model = CTGAN(
             epochs=self.epochs,
-            verbose=self.verbose
+            verbose=self.verbose,
+            cuda=cuda_arg
         )
-        self.weights = {}
+        self.weights: dict = {}
 
 
     def train(self):

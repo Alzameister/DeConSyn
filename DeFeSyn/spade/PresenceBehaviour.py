@@ -11,7 +11,7 @@ class PresenceBehaviour(CyclicBehaviour):
     - On any change, update consensus degree (-> epsilon_i).
     - Periodically poll presence roster as a safety net.
     """
-    def __init__(self, poll_secs: float = 2.0):
+    def __init__(self, poll_secs: float = 5.0):
         super().__init__()
         self.poll_secs = poll_secs
         self._last_active = set()

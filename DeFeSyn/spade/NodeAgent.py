@@ -1,4 +1,6 @@
 import asyncio
+import json
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -156,17 +158,43 @@ class NodeAgent(Agent):
         # Process a snapshot of current queue
         pending = self.pending_gossip_replies
         self.pending_gossip_replies = []
-        for orig in pending:
+        for msg in pending:
             try:
-                reply = Message(to=str(orig.sender))
-                reply.set_metadata("performative", "inform")
-                reply.set_metadata("type", "gossip-reply")
-                reply.set_metadata("msg_id", f"reply-{orig.get_metadata('msg_id')}")
-                reply.set_metadata("version", orig.get_metadata("version") or str(self.current_iteration))
-                reply.set_metadata("eps", f"{self.consensus.get_eps():.12f}")
-                reply.set_metadata("content-type", "application/octet-stream+b64")
-                reply.body = await asyncio.to_thread(__import__("json").dumps, pkg)
-                await self.send(reply)
-                self.log.info("Sent deferred gossip-reply to {}", orig.sender)
+                try:
+                    eps_i = float(self.consensus.get_eps())
+                except Exception:
+                    eps_i = None
+
+                msg_id = msg.get_metadata("msg_id") or f"in-{uuid.uuid4().hex[:6]}"
+                resp = Message(to=msg.sender)
+                resp.set_metadata("performative", "inform")
+                resp.set_metadata("type", "gossip-reply")
+                resp.set_metadata("content-type", "application/octet-stream+b64")
+                resp_id = f"resp-{msg_id}"
+                resp.set_metadata("msg_id", resp_id)
+                version_sent = str(getattr(self.agent, "last_committed_version", self.agent.current_iteration))
+                resp.set_metadata("version", version_sent)
+                resp.set_metadata("in_reply_to", msg_id)
+                if eps_i is not None:
+                    resp.set_metadata("eps", f"{eps_i:.12f}")
+                resp.body = json.dumps(pkg)
+                await self.send(resp)
+
+                bytes_out = len(resp.body.encode("utf-8"))
+                self.log.info(
+                    "DELAYED RESPOND_SEND: to {} (id={}, ver_sent={}, eps_i={}, bytes={})",
+                    msg.sender, resp_id, version_sent,
+                    f"{eps_i:.6f}" if eps_i is not None else "n/a",
+                    bytes_out
+                )
+
+                self.event.bind(
+                    event="RESPOND_SEND",
+                    local_step=self.current_iteration,
+                    neighbor_id=msg.sender,
+                    out_msg_id=resp_id,
+                    bytes=int(bytes_out),
+                    eps_self=(float(eps_i) if eps_i is not None else None)
+                ).info("send")
             except Exception as e:
-                self.log.warning("Failed sending deferred reply to {}: {}", orig.sender, e)
+                self.log.warning("Failed sending deferred reply to {}: {}", msg.sender, e)

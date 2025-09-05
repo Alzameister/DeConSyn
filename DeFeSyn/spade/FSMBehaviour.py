@@ -194,6 +194,8 @@ class TrainingState(BaseState):
         self.agent.loss_values = self.agent.model.model.loss_values
         self.agent.weights = self.agent.model.get_weights()
 
+        await self.agent.flush_pending_gossip_replies()
+
         # metrics
         G_loss = float(self.agent.loss_values["Generator Loss"].iloc[-1]) if not self.agent.loss_values.empty else None
         D_loss = float(self.agent.loss_values["Discriminator Loss"].iloc[-1]) if not self.agent.loss_values.empty else None

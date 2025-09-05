@@ -6,6 +6,7 @@ import pandas as pd
 import torch
 from spade.agent import Agent
 from spade.template import Template
+from spade.message import Message
 from loguru import logger
 
 from DeFeSyn.consensus.Consensus import Consensus
@@ -92,6 +93,7 @@ class NodeAgent(Agent):
         self.queue: asyncio.Queue = asyncio.Queue()
         self.push_queue: asyncio.Queue = asyncio.Queue()
         self.barrier_queues: dict[str, asyncio.Queue[str]] = {}
+        self.pending_gossip_replies: list = []
 
         # model + state (filled by FSM on first TRAIN)
         self.model = None  # CTGANModel instance after first TRAIN
@@ -140,3 +142,31 @@ class NodeAgent(Agent):
         fsm.add_transition(source=TRAINING_STATE, dest=FINAL_STATE)
 
         self.add_behaviour(fsm)
+
+    async def handle_pending_gossip_replies(self):
+        """
+        Send delayed gossip-reply messages once weights are available.
+        """
+        if not self.pending_gossip_replies or not self.model:
+            return
+        pkg = self.model.encode()
+        if not pkg:
+            return
+        self.log.info("Flushing {} pending gossip replies...", len(self.pending_gossip_replies))
+        # Process a snapshot of current queue
+        pending = self.pending_gossip_replies
+        self.pending_gossip_replies = []
+        for orig in pending:
+            try:
+                reply = Message(to=str(orig.sender))
+                reply.set_metadata("performative", "inform")
+                reply.set_metadata("type", "gossip-reply")
+                reply.set_metadata("msg_id", f"reply-{orig.get_metadata('msg_id')}")
+                reply.set_metadata("version", orig.get_metadata("version") or str(self.current_iteration))
+                reply.set_metadata("eps", f"{self.consensus.get_eps():.12f}")
+                reply.set_metadata("content-type", "application/octet-stream+b64")
+                reply.body = await asyncio.to_thread(__import__("json").dumps, pkg)
+                await self.send(reply)
+                self.log.info("Sent deferred gossip-reply to {}", orig.sender)
+            except Exception as e:
+                self.log.warning("Failed sending deferred reply to {}: {}", orig.sender, e)

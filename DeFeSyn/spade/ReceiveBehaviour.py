@@ -53,7 +53,6 @@ class ReceiveBehaviour(CyclicBehaviour):
                     self.agent.log.warning("RESPOND: encode failed: {}", e)
 
                 if pkg:
-
                     # eps_i to share; tolerate consensus not ready yet
                     try:
                         eps_i = float(self.agent.consensus.get_eps())
@@ -91,6 +90,12 @@ class ReceiveBehaviour(CyclicBehaviour):
                         bytes=int(bytes_out),
                         eps_self=(float(eps_i) if eps_i is not None else None)
                     ).info("send")
+                else:
+                    self.agent.log.warning(
+                        "Delaying gossip-reply to {} (weights not ready). Will flush after training.",
+                        msg.sender
+                    )
+                    self.agent.pending_gossip_replies.append(msg)
 
     def _emit_receive_event(self, sender, msg_id, msg_version, q_after, dropped: bool = False):
         self.agent.event.bind(

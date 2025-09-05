@@ -74,9 +74,8 @@ class BaseState(State, ABC):
         # PresenceBehavior maintains this set; fallback to presence contacts if missing.
         active = getattr(self.agent, "active_neighbors", None)
         if isinstance(active, set):
-            print("active", active)
+            self.agent.log("Active neighbors: {}", active)
             return active
-        print("presence")
         contacts = self.agent.presence.get_contacts()
         return {str(jid) for jid, c in contacts.items() if c.is_available()}
 
@@ -151,8 +150,6 @@ class TrainingState(BaseState):
         self._data: Optional[Dict[str, Any]] = None
 
     async def run(self):
-        if self.agent.id == 0:
-            print("node 0")
         self.agent.current_iteration += 1
         it = self.agent.current_iteration
 
@@ -231,8 +228,6 @@ class TrainingState(BaseState):
 
 class PullState(BaseState):
     async def run(self):
-        if self.agent.id == 0:
-            print("node 0")
         if self.agent.queue.empty():
             self.log.info("PULL: queue empty → transition PUSH")
             self.set_next_state(PUSH_STATE)
@@ -297,9 +292,6 @@ class PullState(BaseState):
 
 class PushState(BaseState):
     async def run(self):
-        if self.agent.id == 0:
-            print("node 0")
-
         class WaitResponse(OneShotBehaviour):
             def __init__(self, fut, peer_jid: str):
                 super().__init__()
@@ -472,9 +464,12 @@ def debug_check_single_weight(agent, which="generator"):
     gpu_val = gpu_t.detach().view(-1)[0].item()
     diff = abs(cpu_val - gpu_val)
 
-    print(f"[WEIGHT-CHECK] {which}.{param_key} "
-          f"device={gpu_t.device} cpu_val={cpu_val:.8f} gpu_val={gpu_val:.8f} diff={diff:.3e}")
+    agent.log.debug(
+        f"[WEIGHT-CHECK] {which}.{param_key} "
+        f"device={gpu_t.device} cpu_val={cpu_val:.8f} gpu_val={gpu_val:.8f} diff={diff:.3e}"
+    )
 
     # Strict numeric assertion
     if not torch.allclose(cpu_t, gpu_t.detach().cpu(), atol=1e-7, rtol=1e-7):
+        agent.log.error(f"[WEIGHT-CHECK] MISMATCH in {which}.{param_key}")
         raise RuntimeError(f"Mismatch in {which}.{param_key}")

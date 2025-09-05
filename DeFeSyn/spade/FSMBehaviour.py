@@ -194,7 +194,7 @@ class TrainingState(BaseState):
         self.agent.loss_values = self.agent.model.model.loss_values
         self.agent.weights = self.agent.model.get_weights()
 
-        await self.agent.handle_pending_gossip_replies()
+        await self.handle_pending_gossip_replies()
 
         # metrics
         G_loss = float(self.agent.loss_values["Generator Loss"].iloc[-1]) if not self.agent.loss_values.empty else None
@@ -227,6 +227,60 @@ class TrainingState(BaseState):
         theta_after = get_gan_snapshot(self.agent.model.model)
 
         return TrainSnapshot(ms=ms)
+
+    async def handle_pending_gossip_replies(self):
+        """
+        Send delayed gossip-reply messages once weights are available.
+        """
+        if not self.agent.pending_gossip_replies or not self.agent.model:
+            return
+        pkg = self.agent.model.encode()
+        if not pkg:
+            return
+        self.agent.log.info("Flushing {} pending gossip replies...", len(self.agent.pending_gossip_replies))
+        # Process a snapshot of current queue
+        pending = self.agent.pending_gossip_replies
+        self.agent.pending_gossip_replies = []
+        for msg in pending:
+            try:
+                try:
+                    eps_i = float(self.agent.consensus.get_eps())
+                except Exception:
+                    eps_i = None
+
+                msg_id = msg.get_metadata("msg_id") or f"in-{uuid.uuid4().hex[:6]}"
+                resp = Message(to=msg.sender)
+                resp.set_metadata("performative", "inform")
+                resp.set_metadata("type", "gossip-reply")
+                resp.set_metadata("content-type", "application/octet-stream+b64")
+                resp_id = f"resp-{msg_id}"
+                resp.set_metadata("msg_id", resp_id)
+                version_sent = str(getattr(self.agent, "last_committed_version", self.agent.current_iteration))
+                resp.set_metadata("version", version_sent)
+                resp.set_metadata("in_reply_to", msg_id)
+                if eps_i is not None:
+                    resp.set_metadata("eps", f"{eps_i:.12f}")
+                resp.body = json.dumps(pkg)
+                await self.send(resp)
+
+                bytes_out = len(resp.body.encode("utf-8"))
+                self.agent.log.info(
+                    "DELAYED RESPOND_SEND: to {} (id={}, ver_sent={}, eps_i={}, bytes={})",
+                    msg.sender, resp_id, version_sent,
+                    f"{eps_i:.6f}" if eps_i is not None else "n/a",
+                    bytes_out
+                )
+
+                self.agent.event.bind(
+                    event="RESPOND_SEND",
+                    local_step=self.agent.current_iteration,
+                    neighbor_id=msg.sender,
+                    out_msg_id=resp_id,
+                    bytes=int(bytes_out),
+                    eps_self=(float(eps_i) if eps_i is not None else None)
+                ).info("send")
+            except Exception as e:
+                self.agent.log.warning("Failed sending deferred reply to {}: {}", msg.sender, e)
 
 class PullState(BaseState):
     async def run(self):

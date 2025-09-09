@@ -19,8 +19,6 @@ def agent_jid(i: int) -> str:
     return f"agent{i}@localhost"
 
 class Graph:
-
-
     @staticmethod
     def ring(n: int) -> dict[str, list[str]]:
         """
@@ -43,12 +41,31 @@ class Graph:
             topology[current] = [left_neighbor, right_neighbor]
         return topology
 
+    @staticmethod
+    def full(n: int) -> dict[str, list[str]]:
+        """
+        Create a fully connected topology among the given agents.
+        Parameters
+        ----------
+        n : int
+            The number of agents in the fully connected graph.
 
-
+        Returns
+        -------
+        dict[str, list[str]]
+            A dictionary mapping each agent to its neighbor list, containing the jid's of the neighbors.
+        """
+        topology = {}
+        for i in range(n):
+            current = agent_jid(i)
+            neighbors = [agent_jid(j) for j in range(n) if j != i]
+            topology[current] = neighbors
+        return topology
 
 if __name__ == "__main__":
-    nr_agents = 4
+    nr_agents = 10
 
-    topology = Graph.ring(nr_agents)
+    topology = Graph.full(nr_agents)
     for agent, neighbors in topology.items():
-        print(f"Agent {agent} neighbors: {neighbors}")
+        print(f"{agent} neighbors: {neighbors}")
+        print(f"Number of neighbors: {len(neighbors)}")

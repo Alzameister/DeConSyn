@@ -112,7 +112,7 @@ async def run(
     if topology.lower() == "ring":
         neighbors_map = Graph.ring(nr_agents)
     elif topology.lower() == "full":
-        neighbors_map = build_neighbors_full(nr_agents)
+        neighbors_map = Graph.full(nr_agents)
     else:
         raise ValueError("Unsupported topology. Use 'ring' or 'full'.")
 

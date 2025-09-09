@@ -150,6 +150,9 @@ class TrainingState(BaseState):
         self._data: Optional[Dict[str, Any]] = None
 
     async def run(self):
+        if self.agent.id == 0:
+            self.log.info("Node 0 sleeping 10s to let others start up…")
+            await asyncio.sleep(10.0)
         self.agent.current_iteration += 1
         it = self.agent.current_iteration
 
@@ -407,6 +410,26 @@ class PushState(BaseState):
         self.log.info("PUSH: peer {}", peer)
         if not peer:
             self.log.warning("PUSH: no available neighbors; skipping this round")
+
+            # Persist snapshot even if no gossip
+            p = make_path(
+                run_id=self.agent.run_id,
+                node_id=self.agent.id,
+                iteration=it,
+                phase="weights",
+                ext="pt",
+                repo_root=self.agent.repo_dir
+            )
+            save_weights_pt(state_dict=self.agent.weights, path=p)
+            p = make_path(
+                run_id=self.agent.run_id,
+                node_id=self.agent.id,
+                iteration=it,
+                phase="model",
+                ext="pkl",
+                repo_root=self.agent.repo_dir
+            )
+            save_model_pickle(model=self.agent.model.model, path=p)
             self.set_next_state(TRAINING_STATE)
             return
 
@@ -448,6 +471,27 @@ class PushState(BaseState):
                 event="RESPOND_RECV", local_step=self.agent.current_iteration,
                 neighbor_id=str(peer), msg_id=None, version=None, timeout=True
             ).info("none")
+
+            # Persist snapshot even if no gossip
+            p = make_path(
+                run_id=self.agent.run_id,
+                node_id=self.agent.id,
+                iteration=it,
+                phase="weights",
+                ext="pt",
+                repo_root=self.agent.repo_dir
+            )
+            save_weights_pt(state_dict=self.agent.weights, path=p)
+            p = make_path(
+                run_id=self.agent.run_id,
+                node_id=self.agent.id,
+                iteration=it,
+                phase="model",
+                ext="pkl",
+                repo_root=self.agent.repo_dir
+            )
+            save_model_pickle(model=self.agent.model.model, path=p)
+
             self.set_next_state(TRAINING_STATE)
             return
 

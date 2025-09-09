@@ -28,23 +28,35 @@ def init_logging(run_id: str | None = None,
             parts.append(f"{iterations}Iterations")
         meta = "-" + "-".join(parts) if parts else ""
         run_id = f"run-{current_time.strftime('%Y%m%d-%H%M%S')}{meta}"
-    project_root = Path(__file__).resolve().parent.parent.parent  # Adjust the number of .parent calls based on your directory structure
+    project_root = Path(__file__).resolve().parent.parent.parent
     log_dir = project_root / "logs" / run_id
     log_dir.mkdir(parents=True, exist_ok=True)
 
     logger.remove()
 
+    console_fmt = (
+        "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> "
+        "| <level>{level: <7}</level> "
+        "| n={extra[node_id]:0>2} {extra[jid]} "
+        "| <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> "
+        "- <level>{message}</level>"
+    )
+
+    # 1) Console sink (stderr)
     logger.add(
         sys.stderr,
         level=level,
         enqueue=True,
-        format=(
-            "<green>{time:YYYY-MM-DD HH:mm:ss.SSS}</green> "
-            "| <level>{level: <7}</level> "
-            "| n={extra[node_id]:0>2} {extra[jid]} "
-            "| <cyan>{name}</cyan>:<cyan>{function}</cyan>:<cyan>{line}</cyan> "
-            "- <level>{message}</level>"
-        ),
+        format=console_fmt,
+    )
+
+    logger.add(
+        log_dir / "console.log",
+        level=level,
+        enqueue=True,
+        format=console_fmt,
+        rotation="50 MB",
+        retention="14 days",
     )
 
     logger.add(

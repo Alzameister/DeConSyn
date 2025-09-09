@@ -1,8 +1,11 @@
 import argparse
+import glob
+import re
 import sys
 from pathlib import Path
 from typing import List, Dict, Union, Tuple
 
+import torch
 from matplotlib import pyplot as plt
 import numpy as np
 import pandas as pd
@@ -50,12 +53,14 @@ class SynEvaluator:
             Privacy: DCR, NNDR, AdversarialAccuracy, SinglingOut, Inference, Linkability, Disclosure
             Utility: BasicStats, JS, KS, CorrelationPearson, CorrelationSpearman,
             Extras: PCA
+            Consensus Metrics: Consensus
         """
     def __init__(self, manifest_path: str, model_path: str, output_dir: str,
                  metrics: List[str] = None, keys: List[str] = None, target: str = None,
                  inf_aux_cols: List[str] = None, secret: str = None, regression: bool = False,
                  link_aux_cols: Tuple[List[str], List[str]] = None, control_frac: float = 0.3,
-                 original_name: str = "adult", synthetic_name: str = "CTGAN"):
+                 original_name: str = "adult", synthetic_name: str = "CTGAN",
+                 run_dir: str = None):
         self.seed = 42
         self.manifest_path = manifest_path
         self.model_path = model_path
@@ -63,11 +68,13 @@ class SynEvaluator:
         self.output_dir.mkdir(parents=True, exist_ok=True)
         self.original_name = original_name
         self.synthetic_name = synthetic_name
+        self.run_dir = Path(run_dir) if run_dir else None
 
         self.metrics = metrics if metrics is not None else [
             "DCR", "NNDR", "AdversarialAccuracy", "SinglingOut", "Inference", "Linkability", "Disclosure",
             "BasicStats", "JS", "KS",
-            "CorrelationPearson", "CorrelationSpearman", "PCA"
+            "CorrelationPearson", "CorrelationSpearman", "PCA",
+            "Consensus"
         ]
 
         # Disclosure
@@ -105,7 +112,7 @@ class SynEvaluator:
 
         privacy_res, utility_res, artifacts = {}, {}, {}
 
-        # ---- Privacy
+        # ===================== PRIVACY METRICS =====================
         print("Running privacy metrics...")
         for name in self.metrics:
             print(name)
@@ -162,7 +169,7 @@ class SynEvaluator:
                 print(r)
 
 
-        # ---- Utility
+        # ===================== UTILITY METRICS =====================
         print("Running utility metrics...")
         for name in self.metrics:
             print(name)
@@ -186,7 +193,7 @@ class SynEvaluator:
                 self._save_txt(name, r)
                 print(r)
 
-        # ---- Extras
+        # ===================== EXTRAS =====================
         if "CorrelationPearson" in self.metrics:
             print("  CorrelationPearson...")
             artifacts.update(
@@ -198,6 +205,12 @@ class SynEvaluator:
         if "PCA" in self.metrics:
             print("  PCA...")
             artifacts["PCA"] = str(self._pca(full_train, synthetic))
+        if "Consensus" in self.metrics:
+            print("  Consensus...")
+            if not self.run_dir:
+                raise ValueError(
+                    "Consensus metric requires --run-dir pointing to the run folder that contains agent_* subdirs.")
+            artifacts["Consensus"] = self._consensus(self.run_dir)
 
         result =  {"privacy": privacy_res, "utility": utility_res, "artifacts": artifacts}
         p = self.output_dir / "results.txt"
@@ -217,6 +230,8 @@ class SynEvaluator:
         m = UtilityMetricManager()
         m.add_metric(metric)
         return m.evaluate_all()
+
+    # ===================== CORRELATION METRIC =====================
 
     def _correlation(self, full_train, synthetic, method: CorrelationMethod, label: str) -> Dict[str, str]:
         metric = CorrelationCalculator(full_train, synthetic, self.original_name, self.synthetic_name)
@@ -252,6 +267,8 @@ class SynEvaluator:
             f"{label}_syn_heatmap": str(p2),
         }
 
+    # ===================== PCA METRIC =====================
+
     def _pca(self, full_train, synthetic) -> Path:
         from sklearn.decomposition import PCA
         combined = pd.concat([full_train, synthetic], ignore_index=True)
@@ -269,6 +286,229 @@ class SynEvaluator:
         plt.savefig(out)
         plt.clf()
         return out
+
+    # ===================== CONSENSUS METRIC (model-parameter-level) =====================
+
+    _ITER_RE = re.compile(r"iter-(\d+)-weights\.pt$")
+
+    @staticmethod
+    def _load_vec(path: Path) -> np.ndarray:
+        sd = torch.load(path, map_location="cpu")
+
+        def walk(v):
+            if isinstance(v, dict):
+                for x in v.values():
+                    yield from walk(x)
+            else:
+                try:
+                    arr = v.detach().cpu().numpy() if isinstance(v, torch.Tensor) else np.asarray(v)
+                    if hasattr(arr, "dtype") and np.issubdtype(arr.dtype, np.number):
+                        yield arr.ravel()
+                except Exception:
+                    pass
+
+        parts = [p for p in walk(sd) if p.size > 0]
+        return np.concatenate(parts, axis=0) if parts else np.zeros((0,), dtype=np.float32)
+
+    def _consensus_collect(self, run_dir: Path):
+        pattern = run_dir / "agent_*" / "iter-*-weights.pt"
+        files = sorted(glob.glob(str(pattern)))
+        by_agent = {}
+        for p in files:
+            pth = Path(p)
+            ag = pth.parent.name
+            m = self._ITER_RE.search(pth.name)
+            if not m:
+                continue
+            t = int(m.group(1))
+            by_agent.setdefault(ag, {})[t] = pth
+
+        if not by_agent:
+            raise ValueError(f"No agent checkpoints found under {run_dir}")
+
+        # Align on common iterations across all agents
+        common_iters = sorted(set.intersection(*(set(d.keys()) for d in by_agent.values())))
+        if not common_iters:
+            raise ValueError("Agents do not share common iterations (no intersection).")
+
+        agents = sorted(by_agent.keys())
+        vecs = {ag: [self._load_vec(by_agent[ag][t]) for t in common_iters] for ag in agents}
+
+        # Check equal parameter vector shapes across agents (optional strictness)
+        ref_len = {len(v[0]) for v in vecs.values()}
+        if len(ref_len) != 1:
+            # Not fatal, but this usually indicates inconsistent state dicts
+            print("WARNING: Not all agents have identical parameter vector lengths.", file=sys.stderr)
+
+        return agents, common_iters, vecs
+
+    def _consensus_curves_full(self, run_dir: Path, eps: float = 1e-12):
+        """
+        Compute consensus metrics (per-agent error E, diameter D, potential V)
+        in both absolute and normalized forms.
+
+        Returns a dict with:
+          agents, iters, E_abs/E_rel (dict of lists), D_abs/D_rel (lists), V_abs/V_rel (lists)
+        """
+        agents, iters, vecs = self._consensus_collect(run_dir)
+
+        E_abs = {ag: [] for ag in agents}
+        E_rel = {ag: [] for ag in agents}
+        D_abs, D_rel = [], []
+        V_abs, V_rel = [], []
+
+        n_agents = len(agents)
+
+        for k, _t in enumerate(iters):
+            X = np.stack([vecs[ag][k] for ag in agents], axis=0)
+            mu = X.mean(axis=0)
+            mu_norm = float(np.linalg.norm(mu))
+            mu_norm_safe = max(mu_norm, eps)
+
+            diffs = X - mu
+
+            # Per-agent errors
+            for i, ag in enumerate(agents):
+                e_abs = float(np.linalg.norm(diffs[i]))
+                E_abs[ag].append(e_abs)
+                E_rel[ag].append(e_abs / mu_norm_safe)
+
+            # Diameter
+            dmax_abs = 0.0
+            for i in range(n_agents):
+                Xi = X[i]
+                for j in range(i + 1, n_agents):
+                    d_ij = float(np.linalg.norm(Xi - X[j]))
+                    if d_ij > dmax_abs:
+                        dmax_abs = d_ij
+            D_abs.append(dmax_abs)
+            D_rel.append(dmax_abs / mu_norm_safe)
+
+            # Potential (sum of squares)
+            v_abs = float(np.sum(diffs ** 2))
+            V_abs.append(v_abs)
+            denom_v = n_agents * max(mu_norm ** 2, eps ** 2)
+            V_rel.append(v_abs / denom_v)
+
+        return {
+            "agents": agents,
+            "iters": iters,
+            "E_abs": E_abs,
+            "E_rel": E_rel,
+            "D_abs": D_abs,
+            "D_rel": D_rel,
+            "V_abs": V_abs,
+            "V_rel": V_rel,
+        }
+
+    def _consensus(self, run_dir: Path) -> Dict[str, str]:
+        """
+        Run consensus metric, save artifacts (plots + CSVs) under output_dir/Consensus,
+        and return a dict of artifact paths.
+        """
+        out_dir = self.output_dir / "Consensus"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        res = self._consensus_curves_full(run_dir)
+        agents, iters = res["agents"], np.asarray(res["iters"])
+
+        # ---------- Save CSV summaries ----------
+        # Per-agent E_rel & E_abs
+        e_rel_df = pd.DataFrame({"iter": iters})
+        e_abs_df = pd.DataFrame({"iter": iters})
+        for ag in agents:
+            e_rel_df[ag] = res["E_rel"][ag]
+            e_abs_df[ag] = res["E_abs"][ag]
+        p_e_rel = out_dir / "E_rel_per_agent.csv"
+        p_e_abs = out_dir / "E_abs_per_agent.csv"
+        e_rel_df.to_csv(p_e_rel, index=False)
+        e_abs_df.to_csv(p_e_abs, index=False)
+
+        # Averages (mean across agents)
+        Erel_mat = e_rel_df[agents].to_numpy()
+        Eabs_mat = e_abs_df[agents].to_numpy()
+        avg_df = pd.DataFrame({
+            "iter": iters,
+            "E_rel_mean": Erel_mat.mean(axis=1),
+            "E_rel_rms":  np.sqrt((Erel_mat**2).mean(axis=1)),
+            "E_abs_mean": Eabs_mat.mean(axis=1),
+            "E_abs_rms":  np.sqrt((Eabs_mat**2).mean(axis=1)),
+            "D_rel": res["D_rel"],
+            "D_abs": res["D_abs"],
+            "V_rel": res["V_rel"],
+            "V_abs": res["V_abs"],
+        })
+        p_avg = out_dir / "consensus_summary.csv"
+        avg_df.to_csv(p_avg, index=False)
+
+        # ---------- PLOTS ----------
+        # 1) Per-agent relative error
+        fig1 = out_dir / "consensus-error-per-agent.png"
+        plt.figure()
+        for ag in agents:
+            plt.plot(iters, res["E_rel"][ag], label=ag, alpha=0.9)
+        plt.yscale("log")
+        plt.xlabel("Round")
+        plt.ylabel("Relative consensus error")
+        plt.title(f"Per-agent consensus error (relative). Run: {run_dir.name}")
+        plt.legend(fontsize="small", ncol=2)
+        plt.tight_layout()
+        plt.savefig(fig1)
+        plt.clf()
+
+        # 2) Average errors
+        fig2 = out_dir / "consensus-error-average.png"
+        plt.figure()
+        plt.plot(iters, avg_df["E_rel_mean"], label="Mean (rel)", linewidth=2)
+        plt.plot(iters, avg_df["E_abs_mean"], label="Mean (abs)", linewidth=2)
+        plt.yscale("log")
+        plt.xlabel("Round")
+        plt.ylabel("Consensus error")
+        plt.title(f"Average consensus error. {run_dir.name}")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(fig2)
+        plt.clf()
+
+        # 3) Diameter
+        fig3 = out_dir / "consensus-diameter.png"
+        plt.figure()
+        plt.plot(iters, avg_df["D_rel"], label="Normalized", linewidth=2)
+        plt.plot(iters, avg_df["D_abs"], label="Absolute", linestyle="--", linewidth=2)
+        plt.yscale("log")
+        plt.xlabel("Round")
+        plt.ylabel("Diameter (max pairwise dist)")
+        plt.title(f"Network diameter. {run_dir.name}")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(fig3)
+        plt.clf()
+
+        # 4) Potential
+        fig4 = out_dir / "consensus-potential.png"
+        plt.figure()
+        plt.plot(iters, avg_df["V_rel"], label="Normalized", linewidth=2)
+        plt.plot(iters, avg_df["V_abs"], label="Absolute", linestyle="--", linewidth=2)
+        plt.yscale("log")
+        plt.xlabel("Round")
+        plt.ylabel("Potential Σ||θ_i−μ||²")
+        plt.title(f"Consensus potential. {run_dir.name}")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(fig4)
+        plt.clf()
+
+        # Return artifact paths (for inclusion in overall results)
+        return {
+            "E_rel_per_agent_csv": str(p_e_rel),
+            "E_abs_per_agent_csv": str(p_e_abs),
+            "summary_csv": str(p_avg),
+            "per_agent_plot": str(fig1),
+            "avg_error_plot": str(fig2),
+            "diameter_plot": str(fig3),
+            "potential_plot": str(fig4),
+        }
+
 
     def _save_txt(self, metric_name: str, result: Union[float, dict]) -> None:
         p = self.output_dir / f"{metric_name}_result.txt"
@@ -306,7 +546,7 @@ def cli(argv: List[str] = None) -> int:
         type=_csv_list,
         default=["DCR", "NNDR", "AdversarialAccuracy", "SinglingOut", "Inference",
                  "Linkability", "Disclosure", "BasicStats", "JS", "KS",
-                 "CorrelationPearson", "CorrelationSpearman", "PCA"],
+                 "CorrelationPearson", "CorrelationSpearman", "PCA", "Consensus"],
         help=("Comma-separated metric names to run. Supported: "
               "DCR, NNDR, AdversarialAccuracy, SinglingOut, Inference, Linkability, Disclosure, "
               "BasicStats, JS, KS, CorrelationPearson, CorrelationSpearman, PCA")
@@ -337,6 +577,10 @@ def cli(argv: List[str] = None) -> int:
     # Misc
     parser.add_argument("--seed", type=int, default=42, help="Random seed.")
 
+    # Consensus
+    parser.add_argument("--run-dir", default=None,
+                        help="Path to run directory containing agent_* subfolders with iter-*-weights.pt (required for Consensus).")
+
     args = parser.parse_args(argv)
 
     # Validate conditional requirements
@@ -366,6 +610,12 @@ def cli(argv: List[str] = None) -> int:
             print("ERROR: --inf-aux-cols and --secret are required when running Inference.", file=sys.stderr)
             return 2
 
+    # Consensus requirements
+    if want("consensus"):
+        if not args.run_dir:
+            print("ERROR: --run-dir is required when running Consensus.", file=sys.stderr)
+            return 2
+
     evaluator = SynEvaluator(
         manifest_path=args.manifest_path,
         model_path=args.model_path,
@@ -380,6 +630,7 @@ def cli(argv: List[str] = None) -> int:
         regression=bool(args.regression),
         link_aux_cols=link_aux_cols,
         control_frac=args.control_frac,
+        run_dir=args.run_dir
     )
 
     # Optional: set seed if you also want to seed numpy/py modules consistently inside evaluate()
@@ -392,42 +643,3 @@ def cli(argv: List[str] = None) -> int:
 
 if __name__ == "__main__":
     raise SystemExit(cli())
-
-# if __name__ == "__main__":
-#     path = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/runs/baseline_ctgan"
-#     model_path = path + "/ctgan_adult_default.pkl"
-#
-#     #metrics = ["AdversarialAccuracy", "SinglingOut", "Inference", "Linkability", "Disclosure"]
-#
-#     # Disclosure settings
-#     keys = ["age", "sex", "marital-status", "education", "occupation", "hours-per-week", "workclass",
-#                  "native-country"]
-#     target = "income"
-#     # Inferential attack settings
-#     inf_aux_cols = ['age', 'sex', 'race', 'relationship', 'education', 'occupation', 'workclass', 'native-country']
-#     secret = 'income'
-#     regression = False
-#
-#     # Linkability settings
-#     link_aux_cols = (
-#         ["age", "sex", "race", "marital-status", "native-country"],  # set A
-#         ["education", "workclass", "occupation", "hours-per-week"]  # set B
-#     )
-#
-#     evaluator = SynEvaluator(
-#         manifest_path=f"{ADULT_PATH}/{ADULT_MANIFEST}",
-#         model_path=model_path,
-#         output_dir=path,
-#         original_name="adult",
-#         synthetic_name="CTGAN 4 Agents 15 Epochs 20 Iterations Ring",
-#         #metrics=metrics,
-#         keys=keys,
-#         target=target,
-#         inf_aux_cols=inf_aux_cols,
-#         secret=secret,
-#         regression=regression,
-#         link_aux_cols=link_aux_cols,
-#         control_frac=0.3,
-#     )
-#     results = evaluator.evaluate()
-#     print(results)

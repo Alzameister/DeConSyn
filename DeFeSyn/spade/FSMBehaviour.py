@@ -324,8 +324,12 @@ class PullState(BaseState):
                 "msg_id": msg.get_metadata("msg_id"),
                 "version": int(msg.get_metadata("version") or it),
             })
-            self.log.info("PULL: consensus step applied (eps_i→{:.6f}, used eps_j={:.6f})",
-                          self.agent.consensus.get_eps(), eps_j)
+            self.log.info(
+                "PULL: consensus step applied (eps_i: {:.6f} → {:.6f}, used eps_j={:.6f})",
+                self.agent.consensus.prev_eps,
+                self.agent.consensus.get_eps(),
+                eps_j
+            )
             self.log.info("PULL: Consumed {} messages so far", len(consumed))
 
             # cooperative yield
@@ -525,8 +529,12 @@ class PushState(BaseState):
         )
         save_model_pickle(model=self.agent.model.model, path=p)
 
-        self.log.info("RESPOND: consensus step applied (eps_i→{:.6f}, used eps_j={:.6f})",
-                      self.agent.consensus.get_eps(), eps_j)
+        self.log.info(
+            "PULL: consensus step applied (eps_i: {:.6f} → {:.6f}, used eps_j={:.6f})",
+            self.agent.consensus.prev_eps,  # this is εᵢ^(t)
+            self.agent.consensus.get_eps(),  # this is εᵢ^(t+1)
+            eps_j
+        )
 
         self.agent.event.bind(
             event="RESPOND_RECV", local_step=self.agent.current_iteration,

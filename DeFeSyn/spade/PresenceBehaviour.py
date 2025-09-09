@@ -109,11 +109,12 @@ class PresenceBehaviour(CyclicBehaviour):
         if merged != getattr(self, "_last_active", set()) or initial:
             self._last_active = set(merged)
             a.active_neighbors = merged
-            try:
-                a.consensus.set_degree(len(merged))
-                eps = float(a.consensus.get_eps())
-            except Exception:
-                eps = None
+            # try:
+            #     a.consensus.set_degree(len(merged))
+            #     eps = float(a.consensus.get_eps())
+            # except Exception:
+            #     eps = None
+            eps = a.consensus.get_eps()
             a.log.info(
                 "Presence: active_neighbors={} | degree={} | eps_i={}",
                 sorted(merged), len(merged),
@@ -125,12 +126,12 @@ class PresenceBehaviour(CyclicBehaviour):
         deg = len(a.active_neighbors)
 
         # Update consensus degree
-        try:
-            a.consensus.set_degree(deg)
-            eps = float(a.consensus.get_eps())
-        except Exception:
-            eps = None
-
+        # try:
+        #     a.consensus.set_degree(deg)
+        #     eps = float(a.consensus.get_eps())
+        # except Exception:
+        #     eps = None
+        eps = a.consensus.get_eps()
         a.log.info(
             "Presence: active_neighbors={} | degree={} | eps_i={}",
             sorted(list(a.active_neighbors)), deg, f"{eps:.6f}" if eps is not None else "n/a"

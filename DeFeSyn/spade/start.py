@@ -1,15 +1,17 @@
 import asyncio
 import os
-
-import requests
+import argparse
+import contextlib
+import signal
 import spade
+
 from loguru import logger
 from joblib import parallel_config
-from requests.auth import HTTPBasicAuth
 
 from DeFeSyn.data.DataLoader import DatasetLoader
 from DeFeSyn.logging.logger import init_logging
 from DeFeSyn.spade.NodeAgent import NodeAgent, NodeConfig, NodeData
+from DeFeSyn.utils.graph import Graph, agent_jid
 from DeFeSyn.utils.seed import set_global_seed
 
 ADULT_PATH = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/05_Data/adult"
@@ -17,16 +19,11 @@ ADULT_MANIFEST = "manifest.yaml"
 SEED = 42
 set_global_seed(SEED)
 
-def agent_jid(i: int) -> str:
-    return f"agent{i}@localhost"
+# =========================
+# UTILS
+# =========================
 
-def build_neighbors(n: int) -> dict[int, list[str]]:
-    return {
-        i: [agent_jid((i + 1) % n), agent_jid((i + n - 1) % n)]
-        for i in range(n)
-    }
-
-async def shutdown_agents(agents: list[NodeAgent]) -> None:
+async def _shutdown_agents(agents: list[NodeAgent]) -> None:
     # 1) announce we're going offline
     for a in agents:
         try:
@@ -53,135 +50,6 @@ async def shutdown_agents(agents: list[NodeAgent]) -> None:
     except Exception:
         pass
 
-async def epoch_experiments():
-    NR_AGENTS = 4
-    EPOCHS = [5]
-    MAX_ITERATIONS = [60]
-    ALPHA = 1.0
-
-    # --- Data prep (outside agents)
-    loader = DatasetLoader(manifest_path=f"{ADULT_PATH}/{ADULT_MANIFEST}")
-    full_train = loader.get_train()
-    full_test = loader.get_test()
-    # If you still need to split & persist:
-    data_dir, manifest_name = loader.split(NR_AGENTS, save_path=f"{ADULT_PATH}/{NR_AGENTS}")
-    split_loader = DatasetLoader(manifest_path=f"{data_dir}/{manifest_name}")
-
-    def partition_for(i: int) -> NodeData:
-        # pick this agent's partition: keys look like "part-<i>-train" etc.
-        train_name = next(n for n in split_loader.resource_names() if "-train" in n and n.endswith(f"part-{i}"))
-        part_train = split_loader.get(train_name)
-        return NodeData(part_train=part_train, full_train=full_train, full_test=full_test)
-
-    # --- Neighbors (ring)
-    neighbors_map = build_neighbors(NR_AGENTS)
-
-    for e, m in zip(EPOCHS, MAX_ITERATIONS):
-        run_id = init_logging(level="INFO")
-        logger.info(f"Starting experiment with EPOCHS={e}, MAX_ITERATIONS={m}")
-
-        # --- Create agents
-        agents: list[NodeAgent] = []
-        try:
-            for i in range(NR_AGENTS):
-                cfg = NodeConfig(
-                    jid=agent_jid(i),
-                    id=i,
-                    password="password",
-                    epochs=e,
-                    max_iterations=m,
-                    alpha=ALPHA,
-                    run_id=run_id,
-                )
-                data = partition_for(i)
-                a = NodeAgent(
-                    cfg=cfg,
-                    data=data,
-                    neighbors=neighbors_map[i],
-                )
-                agents.append(a)
-
-            # --- Start & run
-            await asyncio.gather(*[a.start(auto_register=True) for a in agents])
-            logger.info(f"{NR_AGENTS} agents started.")
-
-            # FSM is set up in agent.setup(), nothing else to do
-            await asyncio.gather(*[spade.wait_until_finished(a) for a in agents])
-            logger.info("Agents finished.")
-
-            await asyncio.gather(*[a.stop() for a in agents])
-            logger.info("Agents stopped.")
-        finally:
-            await shutdown_agents(agents)
-            logger.info("Agents stopped cleanly.")
-
-async def main():
-    run_id = init_logging(level="INFO")
-    NR_AGENTS = 4
-    EPOCHS = 15
-    MAX_ITERATIONS = 20
-    ALPHA = 1.0
-
-    # --- Data prep (outside agents)
-    loader = DatasetLoader(manifest_path=f"{ADULT_PATH}/{ADULT_MANIFEST}")
-    full_train = loader.get_train()
-    full_test  = loader.get_test()
-    # If you still need to split & persist:
-    data_dir, manifest_name = loader.split(NR_AGENTS, save_path=f"{ADULT_PATH}/{NR_AGENTS}")
-    split_loader = DatasetLoader(manifest_path=f"{data_dir}/{manifest_name}")
-
-    def partition_for(i: int) -> NodeData:
-        # pick this agent's partition: keys look like "part-<i>-train" etc.
-        train_name = next(n for n in split_loader.resource_names() if "-train" in n and n.endswith(f"part-{i}"))
-        part_train = split_loader.get(train_name)
-        return NodeData(part_train=part_train, full_train=full_train, full_test=full_test)
-
-    # --- Neighbors (ring)
-    neighbors_map = build_neighbors(NR_AGENTS)
-
-    # --- Create agents
-    agents: list[NodeAgent] = []
-    try:
-        for i in range(NR_AGENTS):
-            cfg = NodeConfig(
-                jid=agent_jid(i),
-                id=i,
-                password="password",
-                epochs=EPOCHS,
-                max_iterations=MAX_ITERATIONS,
-                alpha=ALPHA,
-                run_id=run_id,
-            )
-            data = partition_for(i)
-            a = NodeAgent(
-                cfg=cfg,
-                data=data,
-                neighbors=neighbors_map[i],
-            )
-            agents.append(a)
-
-        # --- Start & run
-        await asyncio.gather(*[a.start(auto_register=True) for a in agents])
-        logger.info(f"{NR_AGENTS} agents started.")
-
-        # FSM is set up in agent.setup(), nothing else to do
-        await asyncio.gather(*[spade.wait_until_finished(a) for a in agents])
-        logger.info("Agents finished.")
-
-        await asyncio.gather(*[a.stop() for a in agents])
-        logger.info("Agents stopped.")
-    finally:
-        await shutdown_agents(agents)
-        logger.info("Agents stopped cleanly.")
-
-
-# =========================
-# CLI SUPPORT (drop-in)
-# =========================
-import argparse
-import contextlib
-import signal
-
 def _csv_ints(s: str) -> list[int]:
     return [int(x.strip()) for x in s.split(",") if x.strip()]
 
@@ -189,10 +57,13 @@ def _csv_bools(s: str) -> list[bool]:
     m = {"true": True, "false": False, "1": True, "0": False}
     return [m[x.strip().lower()] for x in s.split(",") if x.strip().lower() in m]
 
+# =========================
+# CLI
+# =========================
 def build_neighbors_full(n: int) -> dict[int, list[str]]:
     return {i: [agent_jid(j) for j in range(n) if j != i] for i in range(n)}
 
-async def run_once(
+async def run(
     nr_agents: int,
     epochs: int,
     max_iterations: int,
@@ -239,7 +110,7 @@ async def run_once(
 
     # neighbors
     if topology.lower() == "ring":
-        neighbors_map = build_neighbors(nr_agents)
+        neighbors_map = Graph.ring(nr_agents)
     elif topology.lower() == "full":
         neighbors_map = build_neighbors_full(nr_agents)
     else:
@@ -259,7 +130,7 @@ async def run_once(
                 run_id=run_id,
             )
             data = partition_for(i)
-            a = NodeAgent(cfg=cfg, data=data, neighbors=neighbors_map[i])
+            a = NodeAgent(cfg=cfg, data=data, neighbors=neighbors_map[cfg.jid])
             agents.append(a)
 
         with parallel_config(n_jobs=n_jobs, prefer=None):
@@ -273,11 +144,10 @@ async def run_once(
             await asyncio.gather(*[a.stop() for a in agents])
             logger.info("Agents stopped.")
     finally:
-        await shutdown_agents(agents)
+        await _shutdown_agents(agents)
         logger.info("Agents stopped cleanly.")
 
 async def cli_async(args: argparse.Namespace) -> int:
-    # Windows event loop policy (as you had)
     if os.name == "nt":
         with contextlib.suppress(Exception):
             asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())  # type: ignore[attr-defined]
@@ -289,7 +159,7 @@ async def cli_async(args: argparse.Namespace) -> int:
             loop.add_signal_handler(sig, loop.stop)
 
     if args.command == "run":
-        await run_once(
+        await run(
             nr_agents=args.agents,
             epochs=args.epochs,
             max_iterations=args.iterations,
@@ -311,7 +181,7 @@ async def cli_async(args: argparse.Namespace) -> int:
             await asyncio.sleep(5)
             it = iterations[i]
             logger.info(f"=== Sweep run: epochs={e}, iterations={it} ===")
-            await run_once(
+            await run(
                 nr_agents=args.agents,
                 epochs=e,
                 max_iterations=it,

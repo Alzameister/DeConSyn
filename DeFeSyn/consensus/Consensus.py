@@ -20,6 +20,9 @@ class Consensus:
 
     def set_degree(self, degree: int):
         """Initialize/reset ε_i when topology changes (Eq. (4): ε ≤ 1/d_i)."""
+        if self.degree != 0:
+            return
+
         self.degree = max(1, int(degree))
         self.eps = self.alpha / self.degree  # strict version of Eq. (4), is valid because epsilon is less than 1/d_i
         self.prev_eps = self.eps

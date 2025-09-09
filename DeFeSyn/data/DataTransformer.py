@@ -91,9 +91,9 @@ class DataTransformer:
         columns = self._parse_names_file(names_file)
 
         # read .data
-        data_file = next(folder.glob('*.data'), None)
+        data_file = next(folder.glob('*.train'), None)
         if not data_file:
-            raise FileNotFoundError("No .data file found in UCI folder.")
+            raise FileNotFoundError("No .train file found in UCI folder.")
         df_train = pd.read_csv(
             data_file,
             header=None,
@@ -119,8 +119,10 @@ class DataTransformer:
                 df_test = df_test.drop(0).reset_index(drop=True)
 
         # cleanup: convert object columns to category and fill missing
+        MISSING_TOKEN = "MISSING"
         for df in [df_train] + ([df_test] if df_test is not None else []):
-            for col in df.select_dtypes(include='object'):
+            for col in df.select_dtypes(include='object').columns:
+                df[col] = df[col].astype('string').fillna(MISSING_TOKEN)
                 df[col] = df[col].astype('category')
             for col in df.columns:
                 if pd.api.types.is_numeric_dtype(df[col]):
@@ -129,3 +131,9 @@ class DataTransformer:
                     df[col] = df[col].fillna(df[col].mode().iloc[0])
 
         return {'train': df_train, 'test': df_test}
+
+if __name__ == "__main__":
+    path = 'C:/Users/trist/OneDrive/Dokumente/UZH/BA/05_Data/adult'
+    transformer = DataTransformer()
+    #df = transformer.transform(path, output_csv_dir='output/dir')
+    uci_dfs = transformer.transform(path, output_csv_dir=path, format_hint='uci')

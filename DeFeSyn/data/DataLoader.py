@@ -50,6 +50,7 @@ class DatasetLoader:
             df = pd.read_csv(**read_kwargs)
 
             # Enforce types and categories
+            MISSING_TOKEN = "MISSING"
             for field in resource['schema']['fields']:
                 col = field['name']
                 ftype = field.get('type')
@@ -59,11 +60,22 @@ class DatasetLoader:
                     df[col] = pd.to_numeric(df[col], errors='coerce').astype('Int64')
                 elif ftype == 'string':
                     enum = constraints.get('enum')
+
+                    # If manifest declares known categories, extend with "MISSING"
                     if enum:
+                        if MISSING_TOKEN not in enum:
+                            enum = enum + [MISSING_TOKEN]
                         df[col] = pd.Categorical(df[col], categories=enum)
+                        # replace NaN with the explicit category token
+                        df[col] = df[col].cat.add_categories([MISSING_TOKEN]) if MISSING_TOKEN not in df[
+                            col].cat.categories else df[col]
+                        df[col] = df[col].fillna(MISSING_TOKEN)
                     else:
-                        # use pandas string dtype
+                        # No enum: use pandas Categorical with "MISSING"
                         df[col] = df[col].astype('string')
+                        df[col] = df[col].fillna(MISSING_TOKEN)
+                        # Convert to category for efficient storage & model friendliness
+                        df[col] = pd.Categorical(df[col])
 
             self._dataframes[name] = df
 

@@ -218,6 +218,17 @@ async def run_once(
     full_train = loader.get_train()
     full_test  = loader.get_test()
 
+    # Print if training set contains "MISSING" values in column "occupation"
+    if "occupation" in full_train.columns:
+        missing_count = (full_train["occupation"] == "MISSING").sum()
+        logger.info(f"Training set contains {missing_count} 'MISSING' values in 'occupation' column.")
+    if "workclass" in full_train.columns:
+        missing_count = (full_train["workclass"] == "MISSING").sum()
+        logger.info(f"Training set contains {missing_count} 'MISSING' values in 'workclass' column.")
+    if "native-country" in full_train.columns:
+        missing_count = (full_train["native-country"] == "MISSING").sum()
+        logger.info(f"Training set contains {missing_count} 'MISSING' values in 'native-country' column.")
+
     data_dir, manifest_name = loader.split(nr_agents, save_path=f"{data_root}/{nr_agents}")
     split_loader = DatasetLoader(manifest_path=f"{data_dir}/{manifest_name}")
 

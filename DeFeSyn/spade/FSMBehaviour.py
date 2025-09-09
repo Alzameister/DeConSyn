@@ -150,9 +150,6 @@ class TrainingState(BaseState):
         self._data: Optional[Dict[str, Any]] = None
 
     async def run(self):
-        if self.agent.id == 0:
-            self.log.info("Node 0 sleeping 10s to let others start up…")
-            await asyncio.sleep(10.0)
         self.agent.current_iteration += 1
         it = self.agent.current_iteration
 

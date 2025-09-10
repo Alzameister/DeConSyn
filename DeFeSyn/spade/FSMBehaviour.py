@@ -2,6 +2,7 @@ import asyncio
 import json
 import time
 import uuid
+import psutil
 from abc import ABC
 from dataclasses import dataclass
 import random
@@ -193,7 +194,11 @@ class TrainingState(BaseState):
         snap = await self._train_and_snapshot()
         self.agent.loss_values = self.agent.model.model.loss_values
         self.agent.weights = self.agent.model.get_weights()
-
+        proc = psutil.Process()
+        rss_mb = proc.memory_info().rss / 1024 ** 2
+        gpu_mb = torch.cuda.memory_allocated() / 1024 ** 2 if torch.cuda.is_available() else 0
+        self.log.info("MEM: rss={:.1f}MB gpu={:.1f}MB behaviours={}",
+                      rss_mb, gpu_mb, len(self.agent.behaviours))
         await self.handle_pending_gossip_replies()
 
         # metrics

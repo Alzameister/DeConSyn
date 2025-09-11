@@ -8,7 +8,7 @@ from dataclasses import dataclass
 import random
 from typing import Optional, Iterable, Dict, Any
 
-import torch
+import gc, psutil, torch
 from spade.behaviour import FSMBehaviour, State, OneShotBehaviour
 from spade.message import Message
 from spade.template import Template
@@ -45,6 +45,10 @@ def parse_float(s: Optional[str], default: float) -> float:
 def pick_random_peer(active: Iterable[str]) -> Optional[str]:
     arr = list(active)
     return random.choice(arr) if arr else None
+
+def _bytes_len(s: str | bytes) -> int:
+    if s is None: return 0
+    return len(s if isinstance(s, bytes) else s.encode("utf-8"))
 
 @dataclass
 class TrainSnapshot:
@@ -89,6 +93,13 @@ class BaseState(State, ABC):
 
     def _msg_eps(self, msg, fallback: float) -> float:
         return parse_float(msg.get_metadata("eps"), default=fallback)
+
+    def report(self, state: str = ""):
+        proc = psutil.Process()
+        rss_mb = proc.memory_info().rss / 1024 ** 2
+        gpu_mb = torch.cuda.memory_allocated() / 1024 ** 2 if torch.cuda.is_available() else 0
+        self.log.info("{} STATE MEM: rss={:.1f}MB gpu={:.1f}MB behaviours={}",
+                      state, rss_mb, gpu_mb, len(self.agent.behaviours))
 
 class StartState(BaseState):
     async def run(self):
@@ -193,14 +204,11 @@ class TrainingState(BaseState):
 
         snap = await self._train_and_snapshot()
         self.agent.loss_values = self.agent.model.model.loss_values
+        self.agent.model.model.loss_values = None
         self.agent.weights = self.agent.model.get_weights()
-        proc = psutil.Process()
-        rss_mb = proc.memory_info().rss / 1024 ** 2
-        gpu_mb = torch.cuda.memory_allocated() / 1024 ** 2 if torch.cuda.is_available() else 0
-        self.log.info("MEM: rss={:.1f}MB gpu={:.1f}MB behaviours={}",
-                      rss_mb, gpu_mb, len(self.agent.behaviours))
+        self.report("TRAIN")
         await self.handle_pending_gossip_replies()
-
+        self.report("TRAIN AFTER REPLIES")
         # metrics
         G_loss = float(self.agent.loss_values["Generator Loss"].iloc[-1]) if not self.agent.loss_values.empty else None
         D_loss = float(self.agent.loss_values["Discriminator Loss"].iloc[-1]) if not self.agent.loss_values.empty else None
@@ -346,12 +354,15 @@ class PullState(BaseState):
         self.log.info("PULL: averaged {} updates (queue {}→{})", len(consumed), q_before, q_after)
 
         self.agent.event.bind(
-            event="MIX", local_step=self.agent.current_iteration,
-            consumed=consumed,
-            queue_len_before=int(q_before), queue_len_after=int(q_after),
-            mix_time_ms=float(ms)
+            event="MIX",
+            consumed_count=len(consumed),
+            first_msg_id=consumed[0]["msg_id"] if consumed else None,
+            queue_before=int(q_before),
+            queue_after=int(q_after),
+            mix_ms=float(ms),
         ).info("consensus")
 
+        self.report("PULL")
         self.log.info("PULL: transition PUSH")
         self.set_next_state(PUSH_STATE)
 
@@ -460,11 +471,11 @@ class PushState(BaseState):
         self.log.info("PUSH: send → {}", peer)
         await self.send(msg)
 
-        payload_bytes = len(msg.body.encode("utf-8"))
-
+        payload_bytes = _bytes_len(msg.body)
         self.agent.event.bind(
-            event="PUSH", local_step=self.agent.current_iteration,
-            neighbor_id=str(peer), msg_id=msg_id, version=int(version), bytes=int(payload_bytes)
+            event="PUSH",
+            neighbor=str(peer), msg_id=msg_id,
+            ver=int(version), bytes=int(payload_bytes)
         ).info("send")
 
         await asyncio.sleep(0.5)
@@ -549,6 +560,7 @@ class PushState(BaseState):
             timeout=False
         ).info("ok")
 
+        self.report("PUSH")
         self.log.info("PUSH: transition TRAINING")
         self.set_next_state(TRAINING_STATE)
 

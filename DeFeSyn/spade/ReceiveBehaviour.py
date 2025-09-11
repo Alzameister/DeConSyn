@@ -59,7 +59,7 @@ class ReceiveBehaviour(CyclicBehaviour):
                     except Exception:
                         eps_i = None
 
-                    resp = Message(to=msg.sender)
+                    resp = Message(to=sender)
                     resp.set_metadata("performative", "inform")
                     resp.set_metadata("type", "gossip-reply")
                     resp.set_metadata("content-type", "application/octet-stream+b64")
@@ -70,11 +70,12 @@ class ReceiveBehaviour(CyclicBehaviour):
                     resp.set_metadata("in_reply_to", msg_id)
                     if eps_i is not None:
                         resp.set_metadata("eps", f"{eps_i:.12f}")
-                    resp.body = json.dumps(pkg)
+                    pkg_json = json.dumps(pkg)
+                    resp.body = pkg_json
+                    bytes_out = len(pkg_json)
 
                     await self.send(resp)
 
-                    bytes_out = len(resp.body.encode("utf-8"))
                     self.agent.log.info(
                         "RESPOND_SEND: to {} (id={}, ver_sent={}, eps_i={}, bytes={})",
                         sender, resp_id, version_sent,

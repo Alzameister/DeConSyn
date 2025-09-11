@@ -85,7 +85,6 @@ class BaseState(State, ABC):
         return {str(jid) for jid, c in contacts.items() if c.is_available()}
 
     def _encode_weights(self) -> dict:
-        self.agent.model.load_weights(self.agent.weights)
         return self.agent.model.encode()
 
     def _decode_weights(self, body: str) -> dict:
@@ -231,13 +230,13 @@ class TrainingState(BaseState):
         self.set_next_state(PULL_STATE)
 
     async def _train_and_snapshot(self) -> TrainSnapshot:
-        theta_before = get_gan_snapshot(self.agent.model.model)
+        #theta_before = get_gan_snapshot(self.agent.model.model)
 
         t0 = time.perf_counter()
         await asyncio.to_thread(self.agent.model.train)
         ms = (time.perf_counter() - t0) * 1000.0
 
-        theta_after = get_gan_snapshot(self.agent.model.model)
+        #theta_after = get_gan_snapshot(self.agent.model.model)
 
         return TrainSnapshot(ms=ms)
 
@@ -309,6 +308,7 @@ class PullState(BaseState):
         consumed = []
         q_before = self.agent.queue.qsize()
         self.log.info("PULL: queue size before {}", q_before)
+        self.report("PULL before Consume")
         t0 = time.perf_counter()
 
         while not self.agent.queue.empty():
@@ -345,6 +345,10 @@ class PullState(BaseState):
             )
             self.log.info("PULL: Consumed {} messages so far", len(consumed))
 
+            msg.body = None
+            del msg, received_weights
+            gc.collect()
+
             # cooperative yield
             if (time.perf_counter() - t0) > 0.01:
                 await asyncio.sleep(0)
@@ -362,7 +366,7 @@ class PullState(BaseState):
             mix_ms=float(ms),
         ).info("consensus")
 
-        self.report("PULL")
+        self.report("PULL after Consume")
         self.log.info("PULL: transition PUSH")
         self.set_next_state(PUSH_STATE)
 
@@ -455,7 +459,9 @@ class PushState(BaseState):
         self.agent.add_behaviour(WaitResponse(fut, peer), template)
 
         # prepare payload
-        pkg = await asyncio.to_thread(self._encode_weights)
+        self.report("PUSH before Encode")
+        pkg = self._encode_weights()
+        self.report("PUSH after Encode")
         msg_id = f"{self.agent.id}-{it}-{uuid.uuid4().hex[:6]}"
         version = str(it)
         msg = Message(to=str(peer))
@@ -470,6 +476,7 @@ class PushState(BaseState):
 
         self.log.info("PUSH: send → {}", peer)
         await self.send(msg)
+        self.report("PUSH after Send")
 
         payload_bytes = _bytes_len(msg.body)
         self.agent.event.bind(
@@ -477,6 +484,9 @@ class PushState(BaseState):
             neighbor=str(peer), msg_id=msg_id,
             ver=int(version), bytes=int(payload_bytes)
         ).info("send")
+        del body, pkg, msg
+        gc.collect()
+        self.report("PUSH after Del")
 
         await asyncio.sleep(0.5)
 
@@ -513,8 +523,10 @@ class PushState(BaseState):
             return
 
         self.log.info("RESPOND from {}", reply.sender)
+        self.report("PUSH after RESPOND")
 
         received_weights = self._decode_weights(reply.body)
+        self.report("PUSH after Decode")
         eps_j = self._msg_eps(reply, fallback=self.agent.consensus.get_eps())
 
         self.agent.weights = self.agent.consensus.step_with_neighbor(
@@ -524,6 +536,7 @@ class PushState(BaseState):
         )
         if self.agent.model:
             self.agent.model.load_weights(self.agent.weights)
+        self.report("PUSH after Consensus")
 
         # persist snapshot
         p = make_path(
@@ -544,6 +557,7 @@ class PushState(BaseState):
             repo_root=self.agent.repo_dir
         )
         save_model_pickle(model=self.agent.model.model, path=p)
+        self.report("PUSH after Save")
 
         self.log.info(
             "PULL: consensus step applied (eps_i: {:.6f} → {:.6f}, used eps_j={:.6f})",

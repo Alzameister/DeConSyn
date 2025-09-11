@@ -192,7 +192,11 @@ class CTGAN(BaseSynthesizer):
         self._data_sampler = None
         self._generator = None
         self._discriminator = None
+        self._optimizerG = None
+        self._optimizerD = None
         self.loss_values = None
+
+        self.train_data = None
 
     @staticmethod
     def _gumbel_softmax(logits, tau=1, hard=False, eps=1e-10, dim=-1):
@@ -315,6 +319,20 @@ class CTGAN(BaseSynthesizer):
                 'CTGAN does not support null values in the continuous training data. '
                 'Please remove all null values from your continuous training data.'
             )
+    def _coerce_for(self, module, sd):
+        """Loads pretrained state_dict `sd` onto `module`, coercing tensors to proper device/dtype."""
+        if sd is None:
+            return None
+        target = module.state_dict()
+        fixed = {}
+        for k, v in sd.items():
+            if torch.is_tensor(v):
+                # match device & dtype of target param
+                dt = target[k].dtype if k in target else v.dtype
+                fixed[k] = v.detach().to(self._device, dtype=dt)
+            else:
+                fixed[k] = v
+        return fixed
 
     @random_state
     def fit(
@@ -359,60 +377,47 @@ class CTGAN(BaseSynthesizer):
             print("Fitting new DataTransformer model...")
             self._transformer = DataTransformer()
             self._transformer.fit(full_data, discrete_columns)
-
-        train_data = self._transformer.transform(train_data)
+            self.train_data = self._transformer.transform(train_data)
 
         self._data_sampler = DataSampler(
-            train_data, self._transformer.output_info_list, self._log_frequency
+            self.train_data, self._transformer.output_info_list, self._log_frequency
         )
 
         data_dim = self._transformer.output_dimensions
 
-        self._generator = Generator(
-            self._embedding_dim + self._data_sampler.dim_cond_vec(), self._generator_dim, data_dim
-        ).to(self._device)
+        if self._generator is None:
+            self._generator = Generator(
+                self._embedding_dim + self._data_sampler.dim_cond_vec(), self._generator_dim, data_dim
+            ).to(self._device)
 
-        self._discriminator = Discriminator(
-            data_dim + self._data_sampler.dim_cond_vec(), self._discriminator_dim, pac=self.pac
-        ).to(self._device)
-
-        # --- load pretrained weights if provided (AFTER building nets) ---
-        def _coerce_for(module, sd):
-            if sd is None:
-                return None
-            target = module.state_dict()
-            fixed = {}
-            for k, v in sd.items():
-                if torch.is_tensor(v):
-                    # match device & dtype of target param
-                    dt = target[k].dtype if k in target else v.dtype
-                    fixed[k] = v.detach().to(self._device, dtype=dt)
-                else:
-                    fixed[k] = v
-            return fixed
+        if self._discriminator is None:
+            self._discriminator = Discriminator(
+                data_dim + self._data_sampler.dim_cond_vec(), self._discriminator_dim, pac=self.pac
+            ).to(self._device)
 
         if gen_state_dict is not None:
-            gs = _coerce_for(self._generator, gen_state_dict)
+            gs = self._coerce_for(self._generator, gen_state_dict)
             self._generator.load_state_dict(gs, strict=strict)
-            loaded_gen_state_dict = self._generator.state_dict()
 
         if dis_state_dict is not None:
-            ds = _coerce_for(self._discriminator, dis_state_dict)
+            ds = self._coerce_for(self._discriminator, dis_state_dict)
             self._discriminator.load_state_dict(ds, strict=strict)
 
-        optimizerG = optim.Adam(
-            self._generator.parameters(),
-            lr=self._generator_lr,
-            betas=(0.5, 0.9),
-            weight_decay=self._generator_decay,
-        )
+        if self._optimizerG is None:
+            self._optimizerG = optim.Adam(
+                self._generator.parameters(),
+                lr=self._generator_lr,
+                betas=(0.5, 0.9),
+                weight_decay=self._generator_decay,
+            )
 
-        optimizerD = optim.Adam(
-            self._discriminator.parameters(),
-            lr=self._discriminator_lr,
-            betas=(0.5, 0.9),
-            weight_decay=self._discriminator_decay,
-        )
+        if self._optimizerD is None:
+            self._optimizerD = optim.Adam(
+                self._discriminator.parameters(),
+                lr=self._discriminator_lr,
+                betas=(0.5, 0.9),
+                weight_decay=self._discriminator_decay,
+            )
 
         mean = torch.zeros(self._batch_size, self._embedding_dim, device=self._device)
         std = mean + 1
@@ -424,7 +429,7 @@ class CTGAN(BaseSynthesizer):
             description = 'Gen. ({gen:.2f}) | Discrim. ({dis:.2f})'
             epoch_iterator.set_description(description.format(gen=0, dis=0))
 
-        steps_per_epoch = max(len(train_data) // self._batch_size, 1)
+        steps_per_epoch = max(len(self.train_data) // self._batch_size, 1)
         for i in epoch_iterator:
             for id_ in range(steps_per_epoch):
                 for n in range(self._discriminator_steps):
@@ -434,7 +439,7 @@ class CTGAN(BaseSynthesizer):
                     if condvec is None:
                         c1, m1, col, opt = None, None, None, None
                         real = self._data_sampler.sample_data(
-                            train_data, self._batch_size, col, opt
+                            self.train_data, self._batch_size, col, opt
                         )
                     else:
                         c1, m1, col, opt = condvec
@@ -445,7 +450,7 @@ class CTGAN(BaseSynthesizer):
                         perm = np.arange(self._batch_size)
                         np.random.shuffle(perm)
                         real = self._data_sampler.sample_data(
-                            train_data, self._batch_size, col[perm], opt[perm]
+                            self.train_data, self._batch_size, col[perm], opt[perm]
                         )
                         c2 = c1[perm]
 
@@ -469,10 +474,10 @@ class CTGAN(BaseSynthesizer):
                     )
                     loss_d = -(torch.mean(y_real) - torch.mean(y_fake))
 
-                    optimizerD.zero_grad(set_to_none=False)
+                    self._optimizerD.zero_grad(set_to_none=False)
                     pen.backward(retain_graph=True)
                     loss_d.backward()
-                    optimizerD.step()
+                    self._optimizerD.step()
 
                 fakez = torch.normal(mean=mean, std=std)
                 condvec = self._data_sampler.sample_condvec(self._batch_size)
@@ -500,9 +505,9 @@ class CTGAN(BaseSynthesizer):
 
                 loss_g = -torch.mean(y_fake) + cross_entropy
 
-                optimizerG.zero_grad(set_to_none=False)
+                self._optimizerG.zero_grad(set_to_none=False)
                 loss_g.backward()
-                optimizerG.step()
+                self._optimizerG.step()
 
             generator_loss = loss_g.detach().cpu().item()
             discriminator_loss = loss_d.detach().cpu().item()

@@ -574,7 +574,7 @@ class PushState(BaseState):
             waiter.kill()
         except Exception:
             pass
-        del waiter, template, fut
+        del waiter, template, fut, reply, received_weights
         gc.collect()
 
         self.report("PUSH")

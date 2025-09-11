@@ -1,6 +1,5 @@
 import math
-from pathlib import Path
-
+import threading
 import torch, io, gzip, base64, hashlib
 
 from DeFeSyn.models.CTGAN.synthesizers.ctgan import CTGAN
@@ -37,6 +36,10 @@ class CTGANModel:
             cuda=use_cuda_flag
         )
         self.weights: dict = {}
+        self._weights_lock = threading.RLock()
+        # Last CPU snapshot (immutable tensors) for cheap reads
+        self._cpu_weights: dict | None = None
+        self._legacy_serialize = True  # keep existing format flag
 
 
     def _move_modules(self):
@@ -47,6 +50,25 @@ class CTGANModel:
             G.to(self.device)
         if D is not None:
             D.to(self.device)
+
+    def _snapshot_cpu(self) -> dict:
+        """
+        Atomic (under lock) CPU snapshot of current model parameters.
+        Tensors are detached and cloned to avoid later mutation.
+        """
+        G = self.model._generator
+        D = self.model._discriminator
+        gen_sd = {}
+        dis_sd = {}
+        for k, v in G.state_dict().items():
+            gen_sd[k] = v.detach().cpu().clone() if torch.is_tensor(v) else v
+        for k, v in D.state_dict().items():
+            dis_sd[k] = v.detach().cpu().clone() if torch.is_tensor(v) else v
+        return {"generator": gen_sd, "discriminator": dis_sd}
+
+    def _refresh_cpu_snapshot(self):
+        with self._weights_lock:
+            self._cpu_weights = self._snapshot_cpu()
 
     def train(self):
         """
@@ -60,7 +82,7 @@ class CTGANModel:
             dis_state_dict=self.weights.get('discriminator', None)
         )
         self._move_modules()
-        self.weights = self.get_weights()
+        self._refresh_cpu_snapshot()
 
     def sample(self, num_samples, seed=42):
         """
@@ -81,15 +103,18 @@ class CTGANModel:
         Returns:
             dict: Weights of the CTGAN model.
         """
-        # Always return to CPU for consensus and communication
-        G = self.model._generator
-        D = self.model._discriminator
-        return {
-            'generator': {k: (v.detach().cpu() if torch.is_tensor(v) else v)
-                          for k, v in G.state_dict().items()},
-            'discriminator': {k: (v.detach().cpu() if torch.is_tensor(v) else v)
-                              for k, v in D.state_dict().items()}
-        }
+        with self._weights_lock:
+            if self._cpu_weights is None:
+                return None
+            # Deep copy (clone tensors) so caller can mutate freely
+            out = {"generator": {}, "discriminator": {}}
+            for side in ("generator", "discriminator"):
+                for k, v in self._cpu_weights[side].items():
+                    if torch.is_tensor(v):
+                        out[side][k] = v.clone()
+                    else:
+                        out[side][k] = v
+            return out
 
     def load_weights(self, weights):
         """
@@ -98,92 +123,78 @@ class CTGANModel:
         Args:
             weights (dict): Weights to load into the model.
         """
-        if "generator" not in weights or "discriminator" not in weights:
+        if not weights or "generator" not in weights or "discriminator" not in weights:
             return
-        self._move_modules()
+        with self._weights_lock:
+            self._move_modules()
+            G = self.model._generator
+            D = self.model._discriminator
 
-        gen_ref = self.model._generator.state_dict()
-        for k, v in list(weights["generator"].items()):
-            if torch.is_tensor(v) and k in gen_ref and v.dtype != gen_ref[k].dtype:
-                weights["generator"][k] = v.to(gen_ref[k].dtype)
+            # Coerce dtypes/devices
+            refG = G.state_dict()
+            for k, v in list(weights["generator"].items()):
+                if torch.is_tensor(v) and k in refG and v.dtype != refG[k].dtype:
+                    weights["generator"][k] = v.to(refG[k].dtype)
+            refD = D.state_dict()
+            for k, v in list(weights["discriminator"].items()):
+                if torch.is_tensor(v) and k in refD and v.dtype != refD[k].dtype:
+                    weights["discriminator"][k] = v.to(refD[k].dtype)
 
-        dis_ref = self.model._discriminator.state_dict()
-        for k, v in list(weights["discriminator"].items()):
-            if torch.is_tensor(v) and k in dis_ref and v.dtype != dis_ref[k].dtype:
-                weights["discriminator"][k] = v.to(dis_ref[k].dtype)
-
-        self.model._generator.load_state_dict(weights["generator"])
-        self.model._discriminator.load_state_dict(weights["discriminator"])
-        self.weights = self.get_weights()
+            G.load_state_dict(weights["generator"], strict=True)
+            D.load_state_dict(weights["discriminator"], strict=True)
+            # Update snapshot (still inside lock to keep atomic view)
+            self._cpu_weights = self._snapshot_cpu()
 
     def encode(self):
         """Return a JSON-serializable package containing the weights."""
-        try:
-            generator = self.weights['generator']
-            discriminator = self.weights['discriminator']
-        except KeyError:
-            return None
-        cooked = {'generator': {}, 'discriminator': {}}
+        with self._weights_lock:
+            if self._cpu_weights is None:
+                return None
+            snap = self._cpu_weights  # immutable tensors (cloned earlier)
 
-        for k, v in generator.items():
-            if torch.is_tensor(v):
-                t = v.detach().cpu()
-                cooked['generator'][k] = t
-            else:
-                cooked['generator'][k] = v
-        for k, v in discriminator.items():
-            if torch.is_tensor(v):
-                t = v.detach().cpu()
-                cooked['discriminator'][k] = t
-            else:
-                cooked['discriminator'][k] = v
+        def _pack(obj: dict) -> bytes:
+            buf = io.BytesIO()
+            torch.save(obj, buf, _use_new_zipfile_serialization=not self._legacy_serialize)
+            raw = buf.getvalue()
+            return gzip.compress(raw)
 
-        gen_buffer = io.BytesIO()
-        torch.save(cooked['generator'], gen_buffer)
-        gen_raw = gen_buffer.getvalue()
-        gen_compressed = gzip.compress(gen_raw)
-        gen_encoded = base64.b64encode(gen_compressed).decode('utf-8')
-
-        dis_buffer = io.BytesIO()
-        torch.save(cooked['discriminator'], dis_buffer)
-        dis_raw = dis_buffer.getvalue()
-        dis_compressed = gzip.compress(dis_raw)
-        dis_encoded = base64.b64encode(dis_compressed).decode('utf-8')
-
-        checksum = hashlib.sha256(gen_compressed + dis_compressed).hexdigest()
+        gen_comp = _pack(snap["generator"])
+        dis_comp = _pack(snap["discriminator"])
+        checksum = hashlib.sha256(gen_comp + dis_comp).hexdigest()
         return {
-            'generator': gen_encoded,
-            'discriminator': dis_encoded,
-            'checksum': checksum
+            "generator": base64.b64encode(gen_comp).decode("utf-8"),
+            "discriminator": base64.b64encode(dis_comp).decode("utf-8"),
+            "checksum": checksum,
+            "gen_bytes": len(gen_comp),
+            "dis_bytes": len(dis_comp),
         }
 
-    def decode(self, encoded_state_dict):
+    def decode(self, encoded):
         """Decode the state_dict from a JSON-serializable package."""
-        gen_encoded = encoded_state_dict['generator']
-        dis_encoded = encoded_state_dict['discriminator']
-        checksum = encoded_state_dict['checksum']
-
-        gen_compressed = base64.b64decode(gen_encoded)
-        dis_compressed = base64.b64decode(dis_encoded)
-
-        if hashlib.sha256(gen_compressed + dis_compressed).hexdigest() != checksum:
-            raise ValueError("Checksum mismatch. The weights may be corrupted.")
-
-        gen_buffer = io.BytesIO(gzip.decompress(gen_compressed))
-        dis_buffer = io.BytesIO(gzip.decompress(dis_compressed))
-        generator = torch.load(gen_buffer, map_location='cpu')
-        discriminator = torch.load(dis_buffer, map_location='cpu')
-
-        for blk in (generator, discriminator):
-            for k, v in blk.items():
+        gen_comp = base64.b64decode(encoded["generator"])
+        dis_comp = base64.b64decode(encoded["discriminator"])
+        checksum = encoded["checksum"]
+        if hashlib.sha256(gen_comp + dis_comp).hexdigest() != checksum:
+            raise ValueError("Checksum mismatch.")
+        def _unpack(blob: bytes) -> dict:
+            try:
+                buf = io.BytesIO(gzip.decompress(blob))
+                obj = torch.load(buf, map_location="cpu")
+            except Exception as e:
+                raise RuntimeError(f"decode failed: {e}")
+            # Normalize dtypes (float64 -> float32)
+            for k, v in list(obj.items()):
                 if torch.is_tensor(v) and v.dtype == torch.float64:
-                    blk[k] = v.float()
+                    obj[k] = v.float()
+            return obj
 
-        return {
-            'generator': generator,
-            'discriminator': discriminator
-        }
+        gen_sd = _unpack(gen_comp)
+        dis_sd = _unpack(dis_comp)
+        return {"generator": gen_sd, "discriminator": dis_sd}
 
+    def decode_and_load(self, package: dict):
+        decoded = self.decode(package)
+        self.load_weights(decoded)
 
 def _is_float_tensor(t: torch.Tensor) -> bool:
     return t.is_floating_point()

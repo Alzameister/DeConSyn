@@ -2,7 +2,6 @@ import asyncio
 import json
 import time
 import uuid
-import psutil
 from abc import ABC
 from dataclasses import dataclass
 import random
@@ -13,7 +12,7 @@ from spade.behaviour import FSMBehaviour, State, OneShotBehaviour
 from spade.message import Message
 from spade.template import Template
 
-from DeFeSyn.models.CTGAN.wrapper import CTGANModel, get_gan_snapshot, l2_norm_snapshot, l2_delta_between_snapshots
+from DeFeSyn.models.CTGAN.wrapper import CTGANModel
 from DeFeSyn.utils.io import make_path, save_weights_pt, save_model_pickle
 
 START_STATE = "START_STATE"
@@ -152,6 +151,9 @@ class StartState(BaseState):
             # Set consensus degree
             self.agent.consensus.set_degree(len(neighbors))
 
+        # Free up memory
+        gc.collect()
+
         self.set_next_state(TRAINING_STATE)
 
 class TrainingState(BaseState):
@@ -212,8 +214,7 @@ class TrainingState(BaseState):
         G_loss = float(self.agent.loss_values["Generator Loss"].iloc[-1]) if not self.agent.loss_values.empty else None
         D_loss = float(self.agent.loss_values["Discriminator Loss"].iloc[-1]) if not self.agent.loss_values.empty else None
 
-        self.log.info("TRAIN: time={:.1f}ms",
-                      snap.ms)
+        self.log.info("TRAIN: time={:.1f}ms", snap.ms)
 
         self.agent.event.bind(
             event="TRAIN",
@@ -230,13 +231,9 @@ class TrainingState(BaseState):
         self.set_next_state(PULL_STATE)
 
     async def _train_and_snapshot(self) -> TrainSnapshot:
-        #theta_before = get_gan_snapshot(self.agent.model.model)
-
         t0 = time.perf_counter()
         await asyncio.to_thread(self.agent.model.train)
         ms = (time.perf_counter() - t0) * 1000.0
-
-        #theta_after = get_gan_snapshot(self.agent.model.model)
 
         return TrainSnapshot(ms=ms)
 
@@ -291,6 +288,10 @@ class TrainingState(BaseState):
                     bytes=int(bytes_out),
                     eps_self=(float(eps_i) if eps_i is not None else None)
                 ).info("send")
+
+                # Free up memory
+                del msg, pkg
+                gc.collect()
             except Exception as e:
                 self.agent.log.warning("Failed sending deferred reply to {}: {}", msg.sender, e)
 
@@ -305,7 +306,7 @@ class PullState(BaseState):
 
         self.log.info("PULL: processing queue…")
 
-        consumed = []
+        consumed_count = 0
         q_before = self.agent.queue.qsize()
         self.log.info("PULL: queue size before {}", q_before)
         self.report("PULL before Consume")
@@ -324,29 +325,24 @@ class PullState(BaseState):
             received_weights = self._decode_weights(msg.body)
             eps_j = self._msg_eps(msg, fallback=self.agent.consensus.get_eps())
 
+            old = self.agent.weights
             self.agent.weights = self.agent.consensus.step_with_neighbor(
-                x_i=self.agent.weights,
-                x_j=received_weights,
-                eps_j=eps_j,
+                x_i=old, x_j=received_weights, eps_j=eps_j
             )
             if self.agent.model:
                 self.agent.model.load_weights(self.agent.weights)
 
-            consumed.append({
-                "neighbor": str(msg.sender),
-                "msg_id": msg.get_metadata("msg_id"),
-                "version": int(msg.get_metadata("version") or it),
-            })
+            consumed_count += 1
             self.log.info(
                 "PULL: consensus step applied (eps_i: {:.6f} → {:.6f}, used eps_j={:.6f})",
                 self.agent.consensus.prev_eps,
                 self.agent.consensus.get_eps(),
                 eps_j
             )
-            self.log.info("PULL: Consumed {} messages so far", len(consumed))
+            self.log.info("PULL: Consumed {} messages so far", consumed_count)
 
             msg.body = None
-            del msg, received_weights
+            del msg, received_weights, old
             gc.collect()
 
             # cooperative yield
@@ -355,12 +351,11 @@ class PullState(BaseState):
 
         ms = (time.perf_counter() - t0) * 1000.0
         q_after = self.agent.queue.qsize()
-        self.log.info("PULL: averaged {} updates (queue {}→{})", len(consumed), q_before, q_after)
+        self.log.info("PULL: averaged {} updates (queue {}→{})", consumed_count, q_before, q_after)
 
         self.agent.event.bind(
             event="MIX",
-            consumed_count=len(consumed),
-            first_msg_id=consumed[0]["msg_id"] if consumed else None,
+            consumed_count=consumed_count,
             queue_before=int(q_before),
             queue_after=int(q_after),
             mix_ms=float(ms),
@@ -456,7 +451,8 @@ class PushState(BaseState):
 
         fut = asyncio.get_running_loop().create_future()
         template = Template(metadata={"performative": MT_INFORM, "type": T_GOSSIP_REPLY})
-        self.agent.add_behaviour(WaitResponse(fut, peer), template)
+        waiter = WaitResponse(fut, peer)
+        self.agent.add_behaviour(waiter, template)
 
         # prepare payload
         self.report("PUSH before Encode")
@@ -573,6 +569,13 @@ class PushState(BaseState):
             version=int(reply.get_metadata("version") or self.agent.current_iteration),
             timeout=False
         ).info("ok")
+
+        try:
+            waiter.kill()
+        except Exception:
+            pass
+        del waiter, template, fut
+        gc.collect()
 
         self.report("PUSH")
         self.log.info("PUSH: transition TRAINING")

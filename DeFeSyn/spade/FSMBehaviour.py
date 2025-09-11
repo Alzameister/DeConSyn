@@ -426,7 +426,6 @@ class PushState(BaseState):
         self.log.info("PUSH: peer {}", peer)
         if not peer:
             self.log.warning("PUSH: no available neighbors; skipping this round")
-
             # Persist snapshot even if no gossip
             p = make_path(
                 run_id=self.agent.run_id,
@@ -437,15 +436,18 @@ class PushState(BaseState):
                 repo_root=self.agent.repo_dir
             )
             save_weights_pt(state_dict=self.agent.weights, path=p)
-            p = make_path(
-                run_id=self.agent.run_id,
-                node_id=self.agent.id,
-                iteration=it,
-                phase="model",
-                ext="pkl",
-                repo_root=self.agent.repo_dir
-            )
-            save_model_pickle(model=self.agent.model.model, path=p)
+
+            should_persist = (self.agent.current_iteration % 10 == 0)
+            if should_persist:
+                p = make_path(
+                    run_id=self.agent.run_id,
+                    node_id=self.agent.id,
+                    iteration=it,
+                    phase="model",
+                    ext="pkl",
+                    repo_root=self.agent.repo_dir
+                )
+                save_model_pickle(model=self.agent.model.model, path=p)
             self.set_next_state(TRAINING_STATE)
             return
 
@@ -505,15 +507,18 @@ class PushState(BaseState):
                 repo_root=self.agent.repo_dir
             )
             save_weights_pt(state_dict=self.agent.weights, path=p)
-            p = make_path(
-                run_id=self.agent.run_id,
-                node_id=self.agent.id,
-                iteration=it,
-                phase="model",
-                ext="pkl",
-                repo_root=self.agent.repo_dir
-            )
-            save_model_pickle(model=self.agent.model.model, path=p)
+
+            should_persist = (self.agent.current_iteration % 10 == 0)
+            if should_persist:
+                p = make_path(
+                    run_id=self.agent.run_id,
+                    node_id=self.agent.id,
+                    iteration=it,
+                    phase="model",
+                    ext="pkl",
+                    repo_root=self.agent.repo_dir
+                )
+                save_model_pickle(model=self.agent.model.model, path=p)
 
             self.set_next_state(TRAINING_STATE)
             return
@@ -544,15 +549,18 @@ class PushState(BaseState):
             repo_root=self.agent.repo_dir
         )
         save_weights_pt(state_dict=self.agent.weights, path=p)
-        p = make_path(
-            run_id=self.agent.run_id,
-            node_id=self.agent.id,
-            iteration=it,
-            phase="model",
-            ext="pkl",
-            repo_root=self.agent.repo_dir
-        )
-        save_model_pickle(model=self.agent.model.model, path=p)
+
+        should_persist = (self.agent.current_iteration % 10 == 0) or (self.agent.current_iteration == self.agent.max_iterations)
+        if should_persist:
+            p = make_path(
+                run_id=self.agent.run_id,
+                node_id=self.agent.id,
+                iteration=it,
+                phase="model",
+                ext="pkl",
+                repo_root=self.agent.repo_dir
+            )
+            save_model_pickle(model=self.agent.model.model, path=p)
         self.report("PUSH after Save")
 
         self.log.info(

@@ -66,6 +66,10 @@ class SynEvaluator:
         self.model_path = model_path
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.privacy_dir = self.output_dir / "Privacy"
+        self.privacy_dir.mkdir(parents=True, exist_ok=True)
+        self.similarity_dir =  self.output_dir / "Similarity"
+        self.similarity_dir.mkdir(parents=True, exist_ok=True)
         self.original_name = original_name
         self.synthetic_name = synthetic_name
         self.run_dir = Path(run_dir) if run_dir else None
@@ -102,14 +106,6 @@ class SynEvaluator:
         model = load_model_pickle(Path(self.model_path))
         synthetic = model.sample(len(full_train), self.seed)
 
-        # simple clean
-        full_train = full_train.dropna().reset_index(drop=True)
-        synthetic = synthetic.dropna().reset_index(drop=True)
-        if "workclass" in full_train.columns:
-            full_train = full_train[full_train["workclass"] != "Never-worked"]
-        if "workclass" in synthetic.columns:
-            synthetic = synthetic[synthetic["workclass"] != "Never-worked"]
-
         privacy_res, utility_res, artifacts = {}, {}, {}
 
         # ===================== PRIVACY METRICS =====================
@@ -120,26 +116,26 @@ class SynEvaluator:
                 r = self._eval_privacy(DCRCalculator(original=full_train, synthetic=synthetic,
                                                      original_name=self.original_name, synthetic_name=self.synthetic_name))
                 privacy_res[name] = r
-                self._save_txt(name, r)
+                self._save_txt(name, r, self.privacy_dir)
                 print(r)
             if name == "NNDR":
                 r = self._eval_privacy(NNDRCalculator(original=full_train, synthetic=synthetic,
                                                      original_name=self.original_name, synthetic_name=self.synthetic_name))
                 privacy_res[name] = r
-                self._save_txt(name, r)
+                self._save_txt(name, r, self.privacy_dir)
                 print(r)
             elif name == "AdversarialAccuracy":
                 r = self._eval_privacy(
                     AdversarialAccuracyCalculator(original=full_train, synthetic=synthetic,
                                                   original_name=self.original_name, synthetic_name=self.synthetic_name))
                 privacy_res[name] = r
-                self._save_txt(name, r)
+                self._save_txt(name, r, self.privacy_dir)
                 print(r)
             elif name == "SinglingOut":
                 r = self._eval_privacy(SinglingOutCalculator(original=full_train, synthetic=synthetic,
                                                              original_name=self.original_name, synthetic_name=self.synthetic_name))
                 privacy_res[name] = r
-                self._save_txt(name, r)
+                self._save_txt(name, r, self.privacy_dir)
                 print(r)
             elif name == "Inference":
                 r = self._eval_privacy(
@@ -147,7 +143,7 @@ class SynEvaluator:
                                         secret=self.secret, regression=self.regression,
                                         original_name=self.original_name, synthetic_name=self.synthetic_name))
                 privacy_res[name] = r
-                self._save_txt(name, r)
+                self._save_txt(name, r, self.privacy_dir)
                 print(r)
             elif name == "Linkability":
                 control_frac = 0.3
@@ -158,14 +154,14 @@ class SynEvaluator:
                                                             aux_cols=self.link_aux_cols, control=link_control_df,
                                                             original_name=self.original_name, synthetic_name=self.synthetic_name))
                 privacy_res[name] = r
-                self._save_txt(name, r)
+                self._save_txt(name, r, self.privacy_dir)
                 print(r)
             elif name == "Disclosure":
                 r = self._eval_privacy(
                     DisclosureCalculator(original=full_train, synthetic=synthetic, keys=self.keys, target=self.target,
                                         original_name=self.original_name, synthetic_name=self.synthetic_name))
                 privacy_res[name] = r
-                self._save_txt(name, r)
+                self._save_txt(name, r, self.privacy_dir)
                 print(r)
 
 
@@ -178,19 +174,19 @@ class SynEvaluator:
                     BasicStatsCalculator(original=full_train, synthetic=synthetic,
                                          original_name=self.original_name, synthetic_name=self.synthetic_name))
                 utility_res[name] = r
-                self._save_txt(name, r)
+                self._save_txt(name, r, self.similarity_dir)
                 print(r)
             elif name == "JS":
                 r = self._eval_utility(JSCalculator(original=full_train, synthetic=synthetic,
                                                     original_name=self.original_name, synthetic_name=self.synthetic_name))
                 utility_res[name] = r
-                self._save_txt(name, r)
+                self._save_txt(name, r, self.similarity_dir)
                 print(r)
             elif name == "KS":
                 r = self._eval_utility(KSCalculator(original=full_train, synthetic=synthetic,
                                                     original_name=self.original_name, synthetic_name=self.synthetic_name))
                 utility_res[name] = r
-                self._save_txt(name, r)
+                self._save_txt(name, r, self.similarity_dir)
                 print(r)
 
         # ===================== EXTRAS =====================
@@ -236,12 +232,12 @@ class SynEvaluator:
     def _correlation(self, full_train, synthetic, method: CorrelationMethod, label: str) -> Dict[str, str]:
         metric = CorrelationCalculator(full_train, synthetic, self.original_name, self.synthetic_name)
         score = metric.evaluate(method=method)
-        with open(self.output_dir / f"{label}_result.txt", "w") as f:
+        with open(self.similarity_dir / f"{label}_result.txt", "w") as f:
             f.write(f"{label}: {score}\n")
 
         orig_df, syn_df = metric.correlation_pairs(method=method)
-        p_orig_csv = self.output_dir / f"{label}_original_correlation.csv"
-        p_syn_csv = self.output_dir / f"{label}_synthetic_correlation.csv"
+        p_orig_csv = self.similarity_dir / f"{label}_original_correlation.csv"
+        p_syn_csv = self.similarity_dir / f"{label}_synthetic_correlation.csv"
         orig_df.to_csv(p_orig_csv, index=False)
         syn_df.to_csv(p_syn_csv, index=False)
 
@@ -249,18 +245,18 @@ class SynEvaluator:
         plt.figure(figsize=(9, 7))
         sns.heatmap(orig_df, annot=True, fmt=".2f", cmap="coolwarm")
         plt.title(f"Original ({method.name.title()})")
-        p1 = self.output_dir / f"{label}_original_heatmap.png"
+        p1 = self.similarity_dir / f"{label}_original_heatmap.png"
         plt.savefig(p1)
         plt.clf()
         plt.figure(figsize=(9, 7))
         sns.heatmap(syn_df, annot=True, fmt=".2f", cmap="coolwarm")
         plt.title(f"Synthetic ({method.name.title()})")
-        p2 = self.output_dir / f"{label}_synthetic_heatmap.png"
+        p2 = self.similarity_dir / f"{label}_synthetic_heatmap.png"
         plt.savefig(p2)
         plt.clf()
 
         return {
-            f"{label}_score": str(self.output_dir / f"{label}_result.txt"),
+            f"{label}_score": str(self.similarity_dir / f"{label}_result.txt"),
             f"{label}_orig_csv": str(p_orig_csv),
             f"{label}_syn_csv": str(p_syn_csv),
             f"{label}_orig_heatmap": str(p1),
@@ -282,7 +278,7 @@ class SynEvaluator:
         plt.xlabel("PC1")
         plt.ylabel("PC2")
         plt.legend()
-        out = self.output_dir / "PCA_Original_vs_Synthetic.png"
+        out = self.similarity_dir / "PCA_Original_vs_Synthetic.png"
         plt.savefig(out)
         plt.clf()
         return out
@@ -510,8 +506,10 @@ class SynEvaluator:
         }
 
 
-    def _save_txt(self, metric_name: str, result: Union[float, dict]) -> None:
-        p = self.output_dir / f"{metric_name}_result.txt"
+    def _save_txt(self, metric_name: str, result: Union[float, dict], base_dir: Path = None) -> None:
+        base = base_dir if base_dir is not None else self.output_dir
+        base.mkdir(parents=True, exist_ok=True)
+        p = base / f"{metric_name}_result.txt"
         with open(p, "w", encoding="utf-8") as f:
             if isinstance(result, dict):
                 for k, v in result.items(): f.write(f"{k}: {v}\n")

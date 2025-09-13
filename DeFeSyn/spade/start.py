@@ -60,9 +60,6 @@ def _csv_bools(s: str) -> list[bool]:
 # =========================
 # CLI
 # =========================
-def build_neighbors_full(n: int) -> dict[int, list[str]]:
-    return {i: [agent_jid(j) for j in range(n) if j != i] for i in range(n)}
-
 async def run(
     nr_agents: int,
     epochs: int,
@@ -113,6 +110,8 @@ async def run(
         neighbors_map = Graph.ring(nr_agents)
     elif topology.lower() == "full":
         neighbors_map = Graph.full(nr_agents)
+    elif topology.lower() == "small-world":
+        neighbors_map = Graph.small_world(nr_agents, k=4, p=0.1, seed=seed)
     else:
         raise ValueError("Unsupported topology. Use 'ring' or 'full'.")
 

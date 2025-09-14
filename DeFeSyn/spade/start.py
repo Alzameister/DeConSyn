@@ -113,7 +113,7 @@ async def run(
     elif topology.lower() == "small-world":
         neighbors_map = Graph.small_world(nr_agents, k=4, p=0.1, seed=seed)
     else:
-        raise ValueError("Unsupported topology. Use 'ring' or 'full'.")
+        raise ValueError("Unsupported topology. Use 'ring', 'full' or 'small-world'.")
 
     # agents
     agents: list[NodeAgent] = []
@@ -208,7 +208,7 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--alpha", type=float, default=1.0, help="ACo-L alpha (default: 1.0)")
         sp.add_argument("--data-root", default=ADULT_PATH, help="Dataset root directory")
         sp.add_argument("--manifest", default=ADULT_MANIFEST, help="Manifest filename (default: manifest.yaml)")
-        sp.add_argument("--topology", choices=["ring", "full"], default="ring", help="Neighbor topology")
+        sp.add_argument("--topology", choices=["ring", "full", "small-world"], default="ring", help="Neighbor topology")
         sp.add_argument("--xmpp-domain", default="localhost", help="XMPP domain for agent JIDs (default: localhost)")
         sp.add_argument("--password", default="password", help="XMPP password for all agents (default: password)")
         sp.add_argument("--seed", type=int, default=SEED, help=f"Global seed (default: {SEED})")

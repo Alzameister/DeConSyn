@@ -78,7 +78,8 @@ async def run(
     run_id = init_logging(level=log_level.upper(),
                           agents=nr_agents,
                           epochs=epochs,
-                          iterations=max_iterations)
+                          iterations=max_iterations,
+                          topology=topology)
     set_global_seed(seed)
 
     # prepare data

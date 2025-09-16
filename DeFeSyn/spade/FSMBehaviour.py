@@ -592,6 +592,12 @@ class PushState(BaseState):
 class FinalState(BaseState):
     async def run(self):
         self.log.info("FSM completed. Stopping agent.")
+        try:
+            self.agent.presence.set_unavailable()
+        except Exception:
+            self.log.error("Failed setting presence unavailable")
+        await asyncio.sleep(5.0)
+        await self.agent.stop()
 
 def debug_check_single_weight(agent, which="generator"):
     """

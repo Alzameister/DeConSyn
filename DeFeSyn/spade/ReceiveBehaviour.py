@@ -6,11 +6,6 @@ from collections import OrderedDict
 from spade.behaviour import CyclicBehaviour
 from spade.message import Message
 
-
-def _LRU(maxlen):
-    pass
-
-
 class ReceiveBehaviour(CyclicBehaviour):
     def __init__(self, dedupe_max=2048):
         super().__init__()

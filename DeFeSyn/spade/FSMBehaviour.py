@@ -1,4 +1,5 @@
 import asyncio
+import ctypes
 import json
 import time
 import uuid
@@ -31,6 +32,15 @@ T_BARRIER_ACK = "barrier-ack"
 HELLO_RESEND_SEC = 1.0
 HELLO_WAIT_TIMEOUT = 0.2
 BARRIER_TOTAL_TIMEOUT = 30.0  # seconds
+
+libc = ctypes.CDLL("libc.so.6")
+
+def hard_trim():
+    gc.collect()
+    try:
+        libc.malloc_trim(0)
+    except Exception:
+        pass
 
 def discrete_cols_of(df):
     return [c for c in df.columns if getattr(df[c].dtype, "name", "") == "category"]
@@ -172,6 +182,9 @@ class TrainingState(BaseState):
             return
 
         self.log.info("Starting FSM iteration {} → TRAIN", it)
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+            torch.cuda.ipc_collect()
         self._epochs = self._epochs or self.agent.epochs
         self._data = self._data or self.agent.data
 
@@ -226,7 +239,7 @@ class TrainingState(BaseState):
         ).info("ctgan")
 
         self.agent.consensus.start_consensus_window(self.agent.weights)
-
+        hard_trim()
         self.log.info("TRAIN: iteration {} completed → transition PULL", it)
         self.set_next_state(PULL_STATE)
 
@@ -363,6 +376,7 @@ class PullState(BaseState):
 
         self.report("PULL after Consume")
         self.log.info("PULL: transition PUSH")
+        hard_trim()
         self.set_next_state(PUSH_STATE)
 
 class PushState(BaseState):
@@ -520,6 +534,12 @@ class PushState(BaseState):
                 )
                 save_model_pickle(model=self.agent.model.model, path=p)
 
+            try:
+                waiter.kill()
+                self.agent.remove_behaviour(waiter)
+            except Exception:
+                pass
+
             self.set_next_state(TRAINING_STATE)
             return
 
@@ -580,10 +600,12 @@ class PushState(BaseState):
 
         try:
             waiter.kill()
+            self.agent.remove_behaviour(waiter)
         except Exception:
             pass
         del waiter, template, fut, reply, received_weights
         gc.collect()
+        hard_trim()
 
         self.report("PUSH")
         self.log.info("PUSH: transition TRAINING")

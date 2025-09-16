@@ -153,9 +153,9 @@ class CTGANModel:
             snap = self._cpu_weights  # immutable tensors (cloned earlier)
 
         def _pack(obj: dict) -> bytes:
-            buf = io.BytesIO()
-            torch.save(obj, buf, _use_new_zipfile_serialization=not self._legacy_serialize)
-            raw = buf.getvalue()
+            with io.BytesIO() as buf:
+                torch.save(obj, buf, _use_new_zipfile_serialization=not self._legacy_serialize)
+                raw = buf.getvalue()
             return gzip.compress(raw)
 
         gen_comp = _pack(snap["generator"])

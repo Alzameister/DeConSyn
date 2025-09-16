@@ -9,7 +9,6 @@ from spade.message import Message
 class ReceiveBehaviour(CyclicBehaviour):
     def __init__(self, dedupe_max=2048):
         super().__init__()
-        self._seen = _LRU(maxlen=dedupe_max)
 
     async def run(self):
         msg = await self.receive(timeout=0.1)

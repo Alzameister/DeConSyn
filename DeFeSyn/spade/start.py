@@ -73,6 +73,8 @@ async def run(
     seed: int,
     n_jobs: int,
     log_level: str = "INFO",
+    k: int = 4,
+    p: float = 0.1,
 ):
     # logging + seed
     run_id = init_logging(level=log_level.upper(),
@@ -112,7 +114,7 @@ async def run(
     elif topology.lower() == "full":
         neighbors_map = Graph.full(nr_agents)
     elif topology.lower() == "small-world":
-        neighbors_map = Graph.small_world(nr_agents, k=4, p=0.1, seed=seed)
+        neighbors_map = Graph.small_world(nr_agents, k=k, p=p, seed=seed)
     else:
         raise ValueError("Unsupported topology. Use 'ring', 'full' or 'small-world'.")
 
@@ -167,6 +169,8 @@ async def cli_async(args: argparse.Namespace) -> int:
             data_root=args.data_root,
             manifest=args.manifest,
             topology=args.topology,
+            k=args.k,
+            p=args.p,
             xmpp_domain=args.xmpp_domain,
             password=args.password,
             seed=args.seed,
@@ -189,6 +193,8 @@ async def cli_async(args: argparse.Namespace) -> int:
                 data_root=args.data_root,
                 manifest=args.manifest,
                 topology=args.topology,
+                k=args.k,
+                p=args.p,
                 xmpp_domain=args.xmpp_domain,
                 password=args.password,
                 seed=args.seed,
@@ -210,6 +216,8 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--data-root", default=ADULT_PATH, help="Dataset root directory")
         sp.add_argument("--manifest", default=ADULT_MANIFEST, help="Manifest filename (default: manifest.yaml)")
         sp.add_argument("--topology", choices=["ring", "full", "small-world"], default="ring", help="Neighbor topology")
+        sp.add_argument("--k", type=int, default=4, help="Number of nearest neighbors for small-world (default: 4)")
+        sp.add_argument("--p", type=float, default=0.1, help="Rewiring probability for small-world (default: 0.1)")
         sp.add_argument("--xmpp-domain", default="localhost", help="XMPP domain for agent JIDs (default: localhost)")
         sp.add_argument("--password", default="password", help="XMPP password for all agents (default: password)")
         sp.add_argument("--seed", type=int, default=SEED, help=f"Global seed (default: {SEED})")

@@ -1,6 +1,7 @@
 import asyncio
 import ctypes
 import json
+import sys
 import time
 import uuid
 from abc import ABC
@@ -33,12 +34,29 @@ HELLO_RESEND_SEC = 1.0
 HELLO_WAIT_TIMEOUT = 0.2
 BARRIER_TOTAL_TIMEOUT = 30.0  # seconds
 
-libc = ctypes.CDLL("libc.so.6")
+
 
 def hard_trim():
     gc.collect()
     try:
-        libc.malloc_trim(0)
+        if sys.platform.startswith("linux"):
+            libc = ctypes.CDLL("libc.so.6")
+            libc.malloc_trim(0)
+        elif sys.platform.startswith("win"):
+            try:
+                ctypes.cdll.msvcrt._heapmin()
+            except Exception:
+                pass
+            try:
+                kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
+                kernel32.SetProcessWorkingSetSizeEx(
+                    ctypes.c_void_p(-1),
+                    ctypes.c_size_t(-1),
+                    ctypes.c_size_t(-1),
+                    ctypes.c_ulong(0x00000001)
+                )
+            except Exception:
+                pass
     except Exception:
         pass
 

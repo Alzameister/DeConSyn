@@ -38,18 +38,15 @@ class Discriminator(Module):
         alpha = alpha.view(-1, real_data.size(1))
 
         interpolates = alpha * real_data + ((1 - alpha) * fake_data)
-        # TODO: Changes done
-        interpolates.requires_grad_(True)
 
         disc_interpolates = self(interpolates)
 
-        # TODO: Changes done
         gradients = torch.autograd.grad(
             outputs=disc_interpolates,
             inputs=interpolates,
             grad_outputs=torch.ones(disc_interpolates.size(), device=device),
             create_graph=True,
-            # retain_graph=True,
+            retain_graph=True,
             only_inputs=True,
         )[0]
 
@@ -431,13 +428,12 @@ class CTGAN(BaseSynthesizer):
         if self._verbose:
             description = 'Gen. ({gen:.2f}) | Discrim. ({dis:.2f})'
             epoch_iterator.set_description(description.format(gen=0, dis=0))
-        # TODO: Changes done
-        z = torch.empty(self._batch_size, self._embedding_dim, device=self._device)
+
         steps_per_epoch = max(len(self.train_data) // self._batch_size, 1)
         for i in epoch_iterator:
             for id_ in range(steps_per_epoch):
                 for n in range(self._discriminator_steps):
-                    fakez = z.normal_()
+                    fakez = torch.normal(mean=mean, std=std)
 
                     condvec = self._data_sampler.sample_condvec(self._batch_size)
                     if condvec is None:
@@ -458,10 +454,8 @@ class CTGAN(BaseSynthesizer):
                         )
                         c2 = c1[perm]
 
-                    # TODO: Changes done
-                    with torch.no_grad():
-                        fake = self._generator(fakez)
-                        fakeact = self._apply_activate(fake)
+                    fake = self._generator(fakez)
+                    fakeact = self._apply_activate(fake)
 
                     real = torch.from_numpy(real.astype('float32')).to(self._device)
 
@@ -478,17 +472,14 @@ class CTGAN(BaseSynthesizer):
                     pen = self._discriminator.calc_gradient_penalty(
                         real_cat, fake_cat, self._device, self.pac
                     )
-                    # TODO: Changes here
-                    # loss_d = -(torch.mean(y_real) - torch.mean(y_fake))
-                    loss_d = -(torch.mean(y_real) - torch.mean(y_fake)) + pen
+                    loss_d = -(torch.mean(y_real) - torch.mean(y_fake))
 
-                    self._optimizerD.zero_grad(set_to_none=True)
-                    # pen.backward(retain_graph=True)
+                    self._optimizerD.zero_grad(set_to_none=False)
+                    pen.backward(retain_graph=True)
                     loss_d.backward()
                     self._optimizerD.step()
-                
-                # TODO: Changes here
-                fakez = z.normal_()
+
+                fakez = torch.normal(mean=mean, std=std)
                 condvec = self._data_sampler.sample_condvec(self._batch_size)
 
                 if condvec is None:

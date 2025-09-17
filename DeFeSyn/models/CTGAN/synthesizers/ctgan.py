@@ -431,12 +431,13 @@ class CTGAN(BaseSynthesizer):
         if self._verbose:
             description = 'Gen. ({gen:.2f}) | Discrim. ({dis:.2f})'
             epoch_iterator.set_description(description.format(gen=0, dis=0))
-
+        # TODO: Changes done
+        z = torch.empty(self._batch_size, self._embedding_dim, device=self._device)
         steps_per_epoch = max(len(self.train_data) // self._batch_size, 1)
         for i in epoch_iterator:
             for id_ in range(steps_per_epoch):
                 for n in range(self._discriminator_steps):
-                    fakez = torch.normal(mean=mean, std=std)
+                    fakez = z.normal_()
 
                     condvec = self._data_sampler.sample_condvec(self._batch_size)
                     if condvec is None:
@@ -481,12 +482,13 @@ class CTGAN(BaseSynthesizer):
                     # loss_d = -(torch.mean(y_real) - torch.mean(y_fake))
                     loss_d = -(torch.mean(y_real) - torch.mean(y_fake)) + pen
 
-                    self._optimizerD.zero_grad(set_to_none=False)
+                    self._optimizerD.zero_grad(set_to_none=True)
                     # pen.backward(retain_graph=True)
                     loss_d.backward()
                     self._optimizerD.step()
-
-                fakez = torch.normal(mean=mean, std=std)
+                
+                # TODO: Changes here
+                fakez = z.normal_()
                 condvec = self._data_sampler.sample_condvec(self._batch_size)
 
                 if condvec is None:

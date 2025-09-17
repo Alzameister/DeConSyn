@@ -38,15 +38,18 @@ class Discriminator(Module):
         alpha = alpha.view(-1, real_data.size(1))
 
         interpolates = alpha * real_data + ((1 - alpha) * fake_data)
+        # TODO: Changes done
+        interpolates.requires_grad_(True)
 
         disc_interpolates = self(interpolates)
 
+        # TODO: Changes done
         gradients = torch.autograd.grad(
             outputs=disc_interpolates,
             inputs=interpolates,
             grad_outputs=torch.ones(disc_interpolates.size(), device=device),
             create_graph=True,
-            retain_graph=True,
+            # retain_graph=True,
             only_inputs=True,
         )[0]
 
@@ -454,8 +457,10 @@ class CTGAN(BaseSynthesizer):
                         )
                         c2 = c1[perm]
 
-                    fake = self._generator(fakez)
-                    fakeact = self._apply_activate(fake)
+                    # TODO: Changes done
+                    with torch.no_grad():
+                        fake = self._generator(fakez)
+                        fakeact = self._apply_activate(fake)
 
                     real = torch.from_numpy(real.astype('float32')).to(self._device)
 
@@ -472,10 +477,12 @@ class CTGAN(BaseSynthesizer):
                     pen = self._discriminator.calc_gradient_penalty(
                         real_cat, fake_cat, self._device, self.pac
                     )
-                    loss_d = -(torch.mean(y_real) - torch.mean(y_fake))
+                    # TODO: Changes here
+                    # loss_d = -(torch.mean(y_real) - torch.mean(y_fake))
+                    loss_d = -(torch.mean(y_real) - torch.mean(y_fake)) + pen
 
                     self._optimizerD.zero_grad(set_to_none=False)
-                    pen.backward(retain_graph=True)
+                    # pen.backward(retain_graph=True)
                     loss_d.backward()
                     self._optimizerD.step()
 

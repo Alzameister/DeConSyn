@@ -139,11 +139,13 @@ async def run(
             await asyncio.gather(*[a.start(auto_register=True) for a in agents])
             logger.info(f"{nr_agents} agents started (epochs={epochs}, iters={max_iterations}, alpha={alpha}).")
 
-            # wait for completion
-            await asyncio.gather(*[spade.wait_until_finished(a) for a in agents])
+            await asyncio.gather(*[a.fsm_done.wait() for a in agents])
+            logger.info("All FSMs finished — stopping agents...")
 
-            logger.info("Agents finished.")
-            await asyncio.gather(*[a.stop() for a in agents])
+            await asyncio.gather(*[a.stop() for a in agents], return_exceptions=True)
+
+            await asyncio.gather(*[spade.wait_until_finished(a) for a in agents], return_exceptions=True)
+
             logger.info("Agents stopped.")
     finally:
         await _shutdown_agents(agents)

@@ -94,6 +94,7 @@ class NodeFSMBehaviour(FSMBehaviour):
 
     async def on_end(self):
         self.agent.log.info("FSM finished at state {}", self.current_state)
+        self.agent.fsm_done.set()
         # await self.agent.stop()
 
 class BaseState(State, ABC):
@@ -256,7 +257,7 @@ class TrainingState(BaseState):
         ).info("ctgan")
 
         self.agent.consensus.start_consensus_window(self.agent.weights)
-        # hard_trim()
+        hard_trim()
         self.log.info("TRAIN: iteration {} completed → transition PULL", it)
         self.set_next_state(PULL_STATE)
 
@@ -393,7 +394,7 @@ class PullState(BaseState):
 
         self.report("PULL after Consume")
         self.log.info("PULL: transition PUSH")
-        #hard_trim()
+        hard_trim()
         self.set_next_state(PUSH_STATE)
 
 class PushState(BaseState):
@@ -620,7 +621,7 @@ class PushState(BaseState):
             pass
         del waiter, template, fut, reply, received_weights
         gc.collect()
-        # hard_trim()
+        hard_trim()
 
         self.report("PUSH")
         self.log.info("PUSH: transition TRAINING")

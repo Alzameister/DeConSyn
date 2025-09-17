@@ -96,6 +96,7 @@ class NodeAgent(Agent):
         self.push_queue: asyncio.Queue = asyncio.Queue()
         self.barrier_queues: dict[str, asyncio.Queue[str]] = {}
         self.pending_gossip_replies: list = []
+        self.fsm_done: asyncio.Event = asyncio.Event()
 
         # model + state (filled by FSM on first TRAIN)
         self.model = None  # CTGANModel instance after first TRAIN

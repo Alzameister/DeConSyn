@@ -1,4 +1,5 @@
 import asyncio
+import contextlib
 import ctypes
 import json
 import sys
@@ -33,8 +34,6 @@ T_BARRIER_ACK = "barrier-ack"
 HELLO_RESEND_SEC = 1.0
 HELLO_WAIT_TIMEOUT = 0.2
 BARRIER_TOTAL_TIMEOUT = 30.0  # seconds
-
-
 
 def hard_trim():
     gc.collect()
@@ -95,7 +94,7 @@ class NodeFSMBehaviour(FSMBehaviour):
 
     async def on_end(self):
         self.agent.log.info("FSM finished at state {}", self.current_state)
-        await self.agent.stop()
+        # await self.agent.stop()
 
 class BaseState(State, ABC):
     @property
@@ -257,7 +256,7 @@ class TrainingState(BaseState):
         ).info("ctgan")
 
         self.agent.consensus.start_consensus_window(self.agent.weights)
-        hard_trim()
+        # hard_trim()
         self.log.info("TRAIN: iteration {} completed → transition PULL", it)
         self.set_next_state(PULL_STATE)
 
@@ -394,7 +393,7 @@ class PullState(BaseState):
 
         self.report("PULL after Consume")
         self.log.info("PULL: transition PUSH")
-        hard_trim()
+        #hard_trim()
         self.set_next_state(PUSH_STATE)
 
 class PushState(BaseState):
@@ -405,7 +404,7 @@ class PushState(BaseState):
                 self.fut = fut
                 self.peer_jid = peer_jid
                 self.poll_interval = 1.0  # seconds
-                self.timeout = 1000.0  # seconds
+                self.timeout = 120.0  # seconds
 
             def _peer_available(self) -> bool:
                 active = getattr(self.agent, "active_neighbors", None)
@@ -554,7 +553,6 @@ class PushState(BaseState):
 
             try:
                 waiter.kill()
-                self.agent.remove_behaviour(waiter)
             except Exception:
                 pass
 
@@ -618,12 +616,11 @@ class PushState(BaseState):
 
         try:
             waiter.kill()
-            self.agent.remove_behaviour(waiter)
         except Exception:
             pass
         del waiter, template, fut, reply, received_weights
         gc.collect()
-        hard_trim()
+        # hard_trim()
 
         self.report("PUSH")
         self.log.info("PUSH: transition TRAINING")
@@ -632,12 +629,14 @@ class PushState(BaseState):
 class FinalState(BaseState):
     async def run(self):
         self.log.info("FSM completed. Stopping agent.")
-        try:
+        with contextlib.suppress(Exception):
             self.agent.presence.set_unavailable()
-        except Exception:
-            self.log.error("Failed setting presence unavailable")
-        await asyncio.sleep(5.0)
-        await self.agent.stop()
+        # try:
+        #     self.agent.presence.set_unavailable()
+        # except Exception:
+        #     self.log.error("Failed setting presence unavailable")
+        # await asyncio.sleep(5.0)
+        # await self.agent.stop()
 
 def debug_check_single_weight(agent, which="generator"):
     """

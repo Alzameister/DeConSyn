@@ -18,6 +18,9 @@ from spade.template import Template
 from DeFeSyn.models.CTGAN.wrapper import CTGANModel
 from DeFeSyn.utils.io import make_path, save_weights_pt, save_model_pickle
 
+# ----------------------------
+# Constants / Types
+# ----------------------------
 START_STATE = "START_STATE"
 TRAINING_STATE = "TRAINING_STATE"
 PULL_STATE = "PULL_STATE"
@@ -35,27 +38,32 @@ HELLO_RESEND_SEC = 1.0
 HELLO_WAIT_TIMEOUT = 0.2
 BARRIER_TOTAL_TIMEOUT = 30.0  # seconds
 
-def hard_trim():
+@dataclass
+class TrainSnapshot:
+    delta_l2: Optional[float] = None
+    theta_l2: Optional[float] = None
+    rel_delta: Optional[float] = None
+    ms: float = 0.0
+
+# ----------------------------
+# utilities
+# ----------------------------
+def clear_memory():
     gc.collect()
     try:
         if sys.platform.startswith("linux"):
-            libc = ctypes.CDLL("libc.so.6")
-            libc.malloc_trim(0)
+            ctypes.CDLL("libc.so.6").malloc_trim(0)
         elif sys.platform.startswith("win"):
-            try:
+            with contextlib.suppress(Exception):
                 ctypes.cdll.msvcrt._heapmin()
-            except Exception:
-                pass
-            try:
+            with contextlib.suppress(Exception):
                 kernel32 = ctypes.WinDLL("kernel32", use_last_error=True)
                 kernel32.SetProcessWorkingSetSizeEx(
                     ctypes.c_void_p(-1),
                     ctypes.c_size_t(-1),
                     ctypes.c_size_t(-1),
-                    ctypes.c_ulong(0x00000001)
+                    ctypes.c_ulong(0x00000001),
                 )
-            except Exception:
-                pass
     except Exception:
         pass
 
@@ -72,24 +80,20 @@ def pick_random_peer(active: Iterable[str]) -> Optional[str]:
     arr = list(active)
     return random.choice(arr) if arr else None
 
-def _bytes_len(s: str | bytes) -> int:
-    if s is None: return 0
+def _bytes_len(s: Optional[str | bytes]) -> int:
+    if s is None:
+        return 0
     return len(s if isinstance(s, bytes) else s.encode("utf-8"))
 
-@dataclass
-class TrainSnapshot:
-    delta_l2: Optional[float] = None
-    theta_l2: Optional[float] = None
-    rel_delta: Optional[float] = None
-    ms: float = 0.0
-
+# ----------------------------
+# FSM Builder
+# ----------------------------
 class NodeFSMBehaviour(FSMBehaviour):
     """
     Generic FSMBehaviour that is configured declaratively via:
       - states: dict[name -> State()]
       - transitions: list[(source, dest)]
       - initial: name of the initial state
-    Keeps on_start/on_end hooks for logging and completion signaling.
     """
     def __init__(self, *, states: dict[str, State], transitions: list[tuple[str, str]], initial: str):
         super().__init__()
@@ -113,13 +117,16 @@ class NodeFSMBehaviour(FSMBehaviour):
         self.agent.log.info("FSM finished at state {}", self.current_state)
         self.agent.fsm_done.set()
 
+
+# ----------------------------
+# Base State
+# ----------------------------
 class BaseState(State, ABC):
     @property
     def log(self):
         return self.agent.log
 
     def _active_neighbors(self) -> set[str]:
-        # PresenceBehavior maintains this set; fallback to presence contacts if missing.
         active = getattr(self.agent, "active_neighbors", None)
         if isinstance(active, set):
             self.agent.log.info("Active neighbors: {}", active)
@@ -127,6 +134,7 @@ class BaseState(State, ABC):
         contacts = self.agent.presence.get_contacts()
         return {str(jid) for jid, c in contacts.items() if c.is_available()}
 
+    # ---- Encoding helpers ----
     def _encode_weights(self) -> dict:
         return self.agent.model.encode()
 
@@ -136,39 +144,116 @@ class BaseState(State, ABC):
     def _msg_eps(self, msg, fallback: float) -> float:
         return parse_float(msg.get_metadata("eps"), default=fallback)
 
-    def report(self, state: str = ""):
-        proc = psutil.Process()
-        rss_mb = proc.memory_info().rss / 1024 ** 2
+    def report(self, label: str = ""):
+        rss_mb = psutil.Process().memory_info().rss / 1024 ** 2
         gpu_mb = torch.cuda.memory_allocated() / 1024 ** 2 if torch.cuda.is_available() else 0
         self.log.info("{} STATE MEM: rss={:.1f}MB gpu={:.1f}MB behaviours={}",
-                      state, rss_mb, gpu_mb, len(self.agent.behaviours))
+                      label, rss_mb, gpu_mb, len(self.agent.behaviours))
 
+    # ---- Persistence helpers ----
+    def _persist_weights(self, it: int):
+        p = make_path(
+            run_id=self.agent.run_id,
+            node_id=self.agent.id,
+            iteration=it,
+            phase="weights",
+            ext="pt",
+            repo_root=self.agent.repo_dir,
+        )
+        save_weights_pt(state_dict=self.agent.weights, path=p)
+
+    def _persist_model(self, it: int):
+        should = (self.agent.current_iteration % 10 == 0) or (self.agent.current_iteration == self.agent.max_iterations)
+        if not should:
+            return
+        p = make_path(
+            run_id=self.agent.run_id,
+            node_id=self.agent.id,
+            iteration=it,
+            phase="model",
+            ext="pkl",
+            repo_root=self.agent.repo_dir,
+        )
+        save_model_pickle(model=self.agent.model.model, path=p)
+
+    # ---- Barrier helpers ----
+    async def _send_barrier_hello(self, to_jid: str, token: str):
+        msg = Message(to=str(to_jid))
+        msg.set_metadata("performative", MT_INFORM)
+        msg.set_metadata("type", T_BARRIER_HELLO)
+        msg.set_metadata("token", token)
+        await self.send(msg)
+
+    async def _send_gossip(self, peer: str, it: int, pkg: dict):
+        msg_id = f"{self.agent.id}-{it}-{uuid.uuid4().hex[:6]}"
+        version = str(it)
+
+        msg = Message(to=str(peer))
+        msg.set_metadata("performative", MT_INFORM)
+        msg.set_metadata("type", T_GOSSIP)
+        msg.set_metadata("content-type", "application/octet-stream+b64")
+        msg.set_metadata("msg_id", msg_id)
+        msg.set_metadata("version", version)
+        msg.set_metadata("eps", f"{self.agent.consensus.get_eps():.12f}")
+        msg.body = await asyncio.to_thread(json.dumps, pkg)
+
+        await self.send(msg)
+
+        self.agent.event.bind(
+            event="PUSH",
+            neighbor=str(peer), msg_id=msg_id,
+            ver=int(version), bytes=int(_bytes_len(msg.body))
+        ).info("send")
+
+        return msg_id, version
+
+    async def _send_gossip_reply(self, req_msg, pkg: dict, eps_i: Optional[float], ver: str) -> str:
+        in_id = req_msg.get_metadata("msg_id") or f"in-{uuid.uuid4().hex[:6]}"
+        resp_id = f"resp-{in_id}"
+        resp = Message(to=req_msg.sender)
+        resp.set_metadata("performative", MT_INFORM)
+        resp.set_metadata("type", T_GOSSIP_REPLY)
+        resp.set_metadata("content-type", "application/octet-stream+b64")
+        resp.set_metadata("msg_id", resp_id)
+        resp.set_metadata("version", ver)
+        resp.set_metadata("in_reply_to", in_id)
+        if eps_i is not None:
+            resp.set_metadata("eps", f"{eps_i:.12f}")
+        resp.body = json.dumps(pkg)
+        await self.send(resp)
+        self.agent.event.bind(
+            event="RESPOND_SEND",
+            local_step=self.agent.current_iteration,
+            neighbor_id=req_msg.sender,
+            out_msg_id=resp_id,
+            bytes=int(_bytes_len(resp.body)),
+            eps_self=(float(eps_i) if eps_i is not None else None)
+        ).info("send")
+        return resp_id
+
+# ----------------------------
+# Start
+# ----------------------------
 class StartState(BaseState):
     async def run(self):
-        await asyncio.sleep(5.0)  # wait for PresenceBehavior to populate active_neighbors
+        # small delay to let PresenceBehaviour populate
+        await asyncio.sleep(5.0)
+
         neighbors = list(getattr(self.agent, "neighbors", []))
         token = f"barrier-{self.agent.id}-{uuid.uuid4().hex[:6]}"
-
-        # register a queue for this token
         q: asyncio.Queue[str] = asyncio.Queue()
         self.agent.barrier_queues[token] = q
 
-        async def send_hellos(targets: Iterable[str]):
-            for jid in targets:
-                msg = Message(to=str(jid))
-                msg.set_metadata("performative", MT_INFORM)
-                msg.set_metadata("type", T_BARRIER_HELLO)
-                msg.set_metadata("token", token)
-                await self.send(msg)
+        async def ping_all(targets: Iterable[str]):
+            await asyncio.gather(*[self._send_barrier_hello(j, token) for j in targets])
 
-        await send_hellos(neighbors)
+        await ping_all(neighbors)
         got = set()
         deadline = time.perf_counter() + BARRIER_TOTAL_TIMEOUT
         resend_at = time.perf_counter() + HELLO_RESEND_SEC
 
         try:
             while time.perf_counter() < deadline and len(got) < len(neighbors):
-                # await ACKs
                 try:
                     sender = await asyncio.wait_for(q.get(), timeout=HELLO_WAIT_TIMEOUT)
                     got.add(sender)
@@ -176,34 +261,31 @@ class StartState(BaseState):
                 except asyncio.TimeoutError:
                     pass
 
-                # resend to missing
                 now = time.perf_counter()
                 if now >= resend_at and len(got) < len(neighbors):
-                    missing = [j for j in neighbors if j not in got]
-                    await send_hellos(missing)
+                    await ping_all([j for j in neighbors if j not in got])
                     resend_at = now + HELLO_RESEND_SEC
         finally:
-            # cleanup even if we break early
             self.agent.barrier_queues.pop(token, None)
 
+        # Set consensus degree based on who actually ACKed
+        degree = len(got) if len(got) < len(neighbors) else len(neighbors)
         if len(got) < len(neighbors):
             self.log.warning("START: barrier partial {}/{} → proceed anyway", len(got), len(neighbors))
-            # Set consensus degree based on actual ACKs
-            self.agent.consensus.set_degree(len(got))
         else:
             self.log.info("START: barrier complete")
-            # Set consensus degree
-            self.agent.consensus.set_degree(len(neighbors))
+        self.agent.consensus.set_degree(degree)
 
-        # Free up memory
-        gc.collect()
-
+        clear_memory()
         self.set_next_state(TRAINING_STATE)
 
+# ----------------------------
+# Training
+# ----------------------------
 class TrainingState(BaseState):
     def __init__(self):
         super().__init__()
-        self._epochs = None
+        self._epochs: Optional[int] = None
         self._data: Optional[Dict[str, Any]] = None
 
     async def run(self):
@@ -219,129 +301,105 @@ class TrainingState(BaseState):
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
             torch.cuda.ipc_collect()
+
         self._epochs = self._epochs or self.agent.epochs
         self._data = self._data or self.agent.data
-
         if "train" not in self._data:
-            self.log.error("TRAIN: No training split in agent.data; cannot proceed.")
+            self.log.error("TRAIN: No training split; cannot proceed.")
             self.set_next_state(FINAL_STATE)
             return
 
-        data = self._data["train"]
-        discrete_cols = discrete_cols_of(data)
-        self.log.info("TRAIN: CTGAN epochs={} | discrete_cols={}", self._epochs, discrete_cols)
+        await self._ensure_model(self._data["train"], self._data.get("full_train"))
+        await self._load_weights()
 
-        if not self.agent.model:
-            self.agent.log.info("TRAIN: init CTGAN model (device={})", self.agent.device)
-            self.agent.model = CTGANModel(
-                full_data=self._data.get("full_train"),
-                data=data,
-                discrete_columns=discrete_cols,
-                epochs=self._epochs,
-                verbose=True,
-                device=self.agent.device
-            )
+        snap = await self._train()
+        self._capture_losses_and_weights()
 
-        if self.agent.weights:
-            self.log.info("TRAIN: warm start: loading weights")
-            self.agent.model.load_weights(self.agent.weights)
-            debug_check_single_weight(self.agent, which="generator")
-            debug_check_single_weight(self.agent, which="discriminator")
-        else:
-            self.log.info("TRAIN: cold start (no weights)")
-
-        snap = await self._train_and_snapshot()
-        self.agent.loss_values = self.agent.model.model.loss_values
-        self.agent.model.model.loss_values = None
-        self.agent.weights = self.agent.model.get_weights()
         self.report("TRAIN")
-        await self.handle_pending_gossip_replies()
+        await self._flush_pending_gossip_replies()
         self.report("TRAIN AFTER REPLIES")
-        # metrics
-        G_loss = float(self.agent.loss_values["Generator Loss"].iloc[-1]) if not self.agent.loss_values.empty else None
-        D_loss = float(self.agent.loss_values["Discriminator Loss"].iloc[-1]) if not self.agent.loss_values.empty else None
 
         self.log.info("TRAIN: time={:.1f}ms", snap.ms)
-
-        self.agent.event.bind(
-            event="TRAIN",
-            local_step=it,
-            epochs=int(self._epochs),
-            epoch_ms=float(snap.ms),
-            G_loss=G_loss,
-            D_loss=D_loss
-        ).info("ctgan")
+        self._train_event(it, snap.ms)
 
         self.agent.consensus.start_consensus_window(self.agent.weights)
-        hard_trim()
+        clear_memory()
         self.log.info("TRAIN: iteration {} completed → transition PULL", it)
         self.set_next_state(PULL_STATE)
 
-    async def _train_and_snapshot(self) -> TrainSnapshot:
+    async def _ensure_model(self, part_train, full_train):
+        if self.agent.model:
+            return
+        dcols = discrete_cols_of(part_train)
+        self.agent.log.info("TRAIN: init CTGAN (epochs={}, device={}, discrete={})",
+                            self._epochs, self.agent.device, dcols)
+        self.agent.model = CTGANModel(
+            full_data=full_train,
+            data=part_train,
+            discrete_columns=dcols,
+            epochs=self._epochs,
+            verbose=True,
+            device=self.agent.device,
+        )
+
+    async def _load_weights(self):
+        if not self.agent.weights:
+            self.log.info("TRAIN: cold start (no weights)")
+            return
+        self.log.info("TRAIN: warm start → loading weights")
+        self.agent.model.load_weights(self.agent.weights)
+        debug_check_single_weight(self.agent, which="generator")
+        debug_check_single_weight(self.agent, which="discriminator")
+
+    async def _train(self) -> TrainSnapshot:
         t0 = time.perf_counter()
         await asyncio.to_thread(self.agent.model.train)
-        ms = (time.perf_counter() - t0) * 1000.0
+        return TrainSnapshot(ms=(time.perf_counter() - t0) * 1000.0)
 
-        return TrainSnapshot(ms=ms)
+    def _capture_losses_and_weights(self):
+        self.agent.loss_values = self.agent.model.model.loss_values
+        self.agent.model.model.loss_values = None
+        self.agent.weights = self.agent.model.get_weights()
 
-    async def handle_pending_gossip_replies(self):
-        """
-        Send delayed gossip-reply messages once weights are available.
-        """
+    async def _flush_pending_gossip_replies(self):
         if not self.agent.pending_gossip_replies or not self.agent.model:
             return
         pkg = self.agent.model.encode()
         if not pkg:
             return
-        self.agent.log.info("Flushing {} pending gossip replies...", len(self.agent.pending_gossip_replies))
-        # Process a snapshot of current queue
         pending = self.agent.pending_gossip_replies
         self.agent.pending_gossip_replies = []
+        self.agent.log.info("Flushing {} pending gossip replies...", len(pending))
+
+        with contextlib.suppress(Exception):
+            eps_i = float(self.agent.consensus.get_eps())
+        version_sent = str(getattr(self.agent, "last_committed_version", self.agent.current_iteration))
+
         for msg in pending:
             try:
-                try:
-                    eps_i = float(self.agent.consensus.get_eps())
-                except Exception:
-                    eps_i = None
-
-                msg_id = msg.get_metadata("msg_id") or f"in-{uuid.uuid4().hex[:6]}"
-                resp = Message(to=msg.sender)
-                resp.set_metadata("performative", "inform")
-                resp.set_metadata("type", "gossip-reply")
-                resp.set_metadata("content-type", "application/octet-stream+b64")
-                resp_id = f"resp-{msg_id}"
-                resp.set_metadata("msg_id", resp_id)
-                version_sent = str(getattr(self.agent, "last_committed_version", self.agent.current_iteration))
-                resp.set_metadata("version", version_sent)
-                resp.set_metadata("in_reply_to", msg_id)
-                if eps_i is not None:
-                    resp.set_metadata("eps", f"{eps_i:.12f}")
-                resp.body = json.dumps(pkg)
-                await self.send(resp)
-
-                bytes_out = len(resp.body.encode("utf-8"))
-                self.agent.log.info(
-                    "DELAYED RESPOND_SEND: to {} (id={}, ver_sent={}, eps_i={}, bytes={})",
-                    msg.sender, resp_id, version_sent,
-                    f"{eps_i:.6f}" if eps_i is not None else "n/a",
-                    bytes_out
-                )
-
-                self.agent.event.bind(
-                    event="RESPOND_SEND",
-                    local_step=self.agent.current_iteration,
-                    neighbor_id=msg.sender,
-                    out_msg_id=resp_id,
-                    bytes=int(bytes_out),
-                    eps_self=(float(eps_i) if eps_i is not None else None)
-                ).info("send")
-
-                # Free up memory
-                del msg, pkg
-                gc.collect()
+                await self._send_gossip_reply(msg, pkg, eps_i, version_sent)
             except Exception as e:
                 self.agent.log.warning("Failed sending deferred reply to {}: {}", msg.sender, e)
+            finally:
+                del msg
+                gc.collect()
 
+    def _train_event(self, it: int, ms: float):
+        lv = self.agent.loss_values
+        g = float(lv["Generator Loss"].iloc[-1]) if lv is not None and not lv.empty else None
+        d = float(lv["Discriminator Loss"].iloc[-1]) if lv is not None and not lv.empty else None
+        self.agent.event.bind(
+            event="TRAIN",
+            local_step=it,
+            epochs=int(self._epochs or 0),
+            epoch_ms=float(ms),
+            G_loss=g,
+            D_loss=d,
+        ).info("ctgan")
+
+# ----------------------------
+# Pull
+# ----------------------------
 class PullState(BaseState):
     async def run(self):
         if self.agent.queue.empty():
@@ -349,11 +407,9 @@ class PullState(BaseState):
             self.set_next_state(PUSH_STATE)
             return
 
-        it = self.agent.current_iteration
-
         self.log.info("PULL: processing queue…")
 
-        consumed_count = 0
+        consumed = 0
         q_before = self.agent.queue.qsize()
         self.log.info("PULL: queue size before {}", q_before)
         self.report("PULL before Consume")
@@ -361,35 +417,33 @@ class PullState(BaseState):
 
         while not self.agent.queue.empty():
             msg = await self.agent.queue.get()
-            self.log.info("PULL: processing message from {}, new queue size: {}", msg.sender, self.agent.queue.qsize())
-            mtype = msg.get_metadata("type")
-            if msg.get_metadata("performative") != MT_INFORM or mtype != T_GOSSIP:
-                self.log.warning("PULL: ignoring unexpected message from {}: {}", msg.sender, msg.metadata)
+            self.log.info("PULL: processing message from {}, new size: {}", msg.sender, self.agent.queue.qsize())
+            if msg.get_metadata("performative") != MT_INFORM or msg.get_metadata("type") != T_GOSSIP:
+                self.log.warning("PULL: ignoring unexpected message: {}", msg.metadata)
                 continue
 
-            self.log.info("PULL: got weights from {}", msg.sender)
-
-            received_weights = self._decode_weights(msg.body)
+            received = self._decode_weights(msg.body)
             eps_j = self._msg_eps(msg, fallback=self.agent.consensus.get_eps())
 
-            old = self.agent.weights
             self.agent.weights = self.agent.consensus.step_with_neighbor(
-                x_i=old, x_j=received_weights, eps_j=eps_j
+                x_i=self.agent.weights,
+                x_j=received,
+                eps_j=eps_j,
             )
             if self.agent.model:
                 self.agent.model.load_weights(self.agent.weights)
 
-            consumed_count += 1
+            consumed += 1
             self.log.info(
-                "PULL: consensus step applied (eps_i: {:.6f} → {:.6f}, used eps_j={:.6f})",
+                "PULL: consensus step (eps_i: {:.6f} → {:.6f}, used eps_j={:.6f})",
                 self.agent.consensus.prev_eps,
                 self.agent.consensus.get_eps(),
-                eps_j
+                eps_j,
             )
-            self.log.info("PULL: Consumed {} messages so far", consumed_count)
 
+            # drop references early
             msg.body = None
-            del msg, received_weights, old
+            del msg, received
             gc.collect()
 
             # cooperative yield
@@ -398,73 +452,73 @@ class PullState(BaseState):
 
         ms = (time.perf_counter() - t0) * 1000.0
         q_after = self.agent.queue.qsize()
-        self.log.info("PULL: averaged {} updates (queue {}→{})", consumed_count, q_before, q_after)
+        self.log.info("PULL: averaged {} updates (queue {}→{})", consumed, q_before, q_after)
 
         self.agent.event.bind(
             event="MIX",
-            consumed_count=consumed_count,
+            consumed_count=consumed,
             queue_before=int(q_before),
             queue_after=int(q_after),
             mix_ms=float(ms),
         ).info("consensus")
 
         self.report("PULL after Consume")
-        self.log.info("PULL: transition PUSH")
-        hard_trim()
+        clear_memory()
         self.set_next_state(PUSH_STATE)
+
+
+# ----------------------------
+# Push
+# ----------------------------
+class _WaitResponse(OneShotBehaviour):
+    """Small waiter that only resolves the future when a reply arrives or timeout/peer-offline."""
+
+    def __init__(self, fut, peer_jid: str, poll_interval: float = 1.0, timeout: float = 120.0):
+        super().__init__()
+        self.fut = fut
+        self.peer_jid = peer_jid
+        self.poll_interval = poll_interval
+        self.timeout = timeout
+
+    def _peer_available(self) -> bool:
+        active = getattr(self.agent, "active_neighbors", None)
+        if isinstance(active, set):
+            return self.peer_jid in active
+        contact = self.agent.presence.get_contacts().get(self.peer_jid)
+        return bool(contact and contact.is_available())
+
+    async def run(self):
+        loop = asyncio.get_running_loop()
+        deadline = loop.time() + self.timeout
+
+        if self.timeout == 0:
+            if not self._peer_available():
+                self.agent.log.warning("WaitResponse: peer {} unavailable (immediate)", self.peer_jid)
+                self.fut.set_result(None)
+                return
+            msg = await self.receive(timeout=0)
+            self.fut.set_result(msg)
+            return
+
+        while True:
+            if not self._peer_available():
+                self.agent.log.warning("WaitResponse: peer {} went unavailable → abort", self.peer_jid)
+                self.fut.set_result(None)
+                return
+
+            remaining = deadline - loop.time()
+            if remaining <= 0:
+                self.agent.log.warning("WaitResponse: timeout waiting for {}", self.peer_jid)
+                self.fut.set_result(None)
+                return
+
+            msg = await self.receive(timeout=min(self.poll_interval, remaining))
+            if msg:
+                self.fut.set_result(msg)
+                return
 
 class PushState(BaseState):
     async def run(self):
-        class WaitResponse(OneShotBehaviour):
-            def __init__(self, fut, peer_jid: str):
-                super().__init__()
-                self.fut = fut
-                self.peer_jid = peer_jid
-                self.poll_interval = 1.0  # seconds
-                self.timeout = 120.0  # seconds
-
-            def _peer_available(self) -> bool:
-                active = getattr(self.agent, "active_neighbors", None)
-                if isinstance(active, set):
-                    return self.peer_jid in active
-                contacts = self.agent.presence.get_contacts()
-                contact = contacts.get(self.peer_jid)
-                return bool(contact and contact.is_available())
-
-            async def run(self):
-                loop = asyncio.get_running_loop()
-                deadline = loop.time() + self.timeout
-
-                if self.timeout == 0:
-                    if not self._peer_available():
-                        self.agent.log.warning("WaitResponse: peer {} unavailable (immediate timeout)", self.peer_jid)
-                        self.fut.set_result(None)
-                        return
-                    msg = await self.receive(timeout=0)  # non-blocking
-                    self.fut.set_result(msg)
-                    return
-
-                while True:
-                    if not self._peer_available():
-                        self.agent.log.warning("WaitResponse: peer {} went unavailable → abort", self.peer_jid)
-                        self.fut.set_result(None)
-                        return
-
-                    remaining = deadline - loop.time()
-                    if remaining <= 0:
-                        self.agent.log.warning("WaitResponse: timeout waiting for {}", self.peer_jid)
-                        self.fut.set_result(None)
-                        return
-
-                    slice_timeout = min(self.poll_interval, remaining)
-                    msg = await self.receive(timeout=slice_timeout)
-                    if msg:
-                        self.fut.set_result(msg)
-                        return
-
-                # msg = await self.receive(timeout=1000.0)  # seconds
-                # self.fut.set_result(msg)
-
         it = self.agent.current_iteration
 
         # choose an active peer
@@ -472,70 +526,32 @@ class PushState(BaseState):
         self.log.info("PUSH: active neighbors: {}", active)
         peer = pick_random_peer(active)
         self.log.info("PUSH: peer {}", peer)
+
         if not peer:
             self.log.warning("PUSH: no available neighbors; skipping this round")
-            # Persist snapshot even if no gossip
-            p = make_path(
-                run_id=self.agent.run_id,
-                node_id=self.agent.id,
-                iteration=it,
-                phase="weights",
-                ext="pt",
-                repo_root=self.agent.repo_dir
-            )
-            save_weights_pt(state_dict=self.agent.weights, path=p)
-
-            should_persist = (self.agent.current_iteration % 10 == 0)
-            if should_persist:
-                p = make_path(
-                    run_id=self.agent.run_id,
-                    node_id=self.agent.id,
-                    iteration=it,
-                    phase="model",
-                    ext="pkl",
-                    repo_root=self.agent.repo_dir
-                )
-                save_model_pickle(model=self.agent.model.model, path=p)
+            self._persist_weights(it)
+            self._persist_model(it)
             self.set_next_state(TRAINING_STATE)
             return
 
+        # install waiter
         fut = asyncio.get_running_loop().create_future()
-        template = Template(metadata={"performative": MT_INFORM, "type": T_GOSSIP_REPLY})
-        waiter = WaitResponse(fut, peer)
-        self.agent.add_behaviour(waiter, template)
+        waiter = _WaitResponse(fut, peer)
+        self.agent.add_behaviour(waiter, Template(metadata={"performative": MT_INFORM, "type": T_GOSSIP_REPLY}))
 
-        # prepare payload
         self.report("PUSH before Encode")
         pkg = self._encode_weights()
         self.report("PUSH after Encode")
-        msg_id = f"{self.agent.id}-{it}-{uuid.uuid4().hex[:6]}"
-        version = str(it)
-        msg = Message(to=str(peer))
-        msg.set_metadata("performative", MT_INFORM)
-        msg.set_metadata("type", T_GOSSIP)
-        msg.set_metadata("content-type", "application/octet-stream+b64")
-        msg.set_metadata("msg_id", msg_id)
-        msg.set_metadata("version", version)
-        msg.set_metadata("eps", f"{self.agent.consensus.get_eps():.12f}")
-        body = await asyncio.to_thread(json.dumps, pkg)
-        msg.body = body
-
-        self.log.info("PUSH: send → {}", peer)
-        await self.send(msg)
+        msg_id, version = await self._send_gossip(peer, it, pkg)
         self.report("PUSH after Send")
 
-        payload_bytes = _bytes_len(msg.body)
-        self.agent.event.bind(
-            event="PUSH",
-            neighbor=str(peer), msg_id=msg_id,
-            ver=int(version), bytes=int(payload_bytes)
-        ).info("send")
-        del body, pkg, msg
+        del pkg
         gc.collect()
         self.report("PUSH after Del")
 
         await asyncio.sleep(0.5)
 
+        # wait for response
         self.log.info("Waiting for RESPOND from {}", peer)
         reply = await fut
         if reply is None:
@@ -545,82 +561,41 @@ class PushState(BaseState):
                 neighbor_id=str(peer), msg_id=None, version=None, timeout=True
             ).info("none")
 
-            # Persist snapshot even if no gossip
-            p = make_path(
-                run_id=self.agent.run_id,
-                node_id=self.agent.id,
-                iteration=it,
-                phase="weights",
-                ext="pt",
-                repo_root=self.agent.repo_dir
-            )
-            save_weights_pt(state_dict=self.agent.weights, path=p)
+            self._persist_weights(it)
+            self._persist_model(it)
 
-            should_persist = (self.agent.current_iteration % 10 == 0)
-            if should_persist:
-                p = make_path(
-                    run_id=self.agent.run_id,
-                    node_id=self.agent.id,
-                    iteration=it,
-                    phase="model",
-                    ext="pkl",
-                    repo_root=self.agent.repo_dir
-                )
-                save_model_pickle(model=self.agent.model.model, path=p)
-
-            try:
+            with contextlib.suppress(Exception):
                 waiter.kill()
-            except Exception:
-                pass
 
             self.set_next_state(TRAINING_STATE)
             return
 
+        # handle response
         self.log.info("RESPOND from {}", reply.sender)
         self.report("PUSH after RESPOND")
 
-        received_weights = self._decode_weights(reply.body)
+        received = self._decode_weights(reply.body)
         self.report("PUSH after Decode")
         eps_j = self._msg_eps(reply, fallback=self.agent.consensus.get_eps())
 
         self.agent.weights = self.agent.consensus.step_with_neighbor(
             x_i=self.agent.weights,
-            x_j=received_weights,
+            x_j=received,
             eps_j=eps_j,
         )
         if self.agent.model:
             self.agent.model.load_weights(self.agent.weights)
         self.report("PUSH after Consensus")
 
-        # persist snapshot
-        p = make_path(
-            run_id=self.agent.run_id,
-            node_id=self.agent.id,
-            iteration=it,
-            phase="weights",
-            ext="pt",
-            repo_root=self.agent.repo_dir
-        )
-        save_weights_pt(state_dict=self.agent.weights, path=p)
-
-        should_persist = (self.agent.current_iteration % 10 == 0) or (self.agent.current_iteration == self.agent.max_iterations)
-        if should_persist:
-            p = make_path(
-                run_id=self.agent.run_id,
-                node_id=self.agent.id,
-                iteration=it,
-                phase="model",
-                ext="pkl",
-                repo_root=self.agent.repo_dir
-            )
-            save_model_pickle(model=self.agent.model.model, path=p)
+        self._persist_weights(it)
+        self._persist_model(it)
         self.report("PUSH after Save")
 
         self.log.info(
             "PULL: consensus step applied (eps_i: {:.6f} → {:.6f}, used eps_j={:.6f})",
-            self.agent.consensus.prev_eps,  # this is εᵢ^(t)
-            self.agent.consensus.get_eps(),  # this is εᵢ^(t+1)
-            eps_j
+            self.agent.consensus.prev_eps,
+            self.agent.consensus.get_eps(),
+            eps_j,
         )
 
         self.agent.event.bind(
@@ -631,29 +606,25 @@ class PushState(BaseState):
             timeout=False
         ).info("ok")
 
-        try:
+        with contextlib.suppress(Exception):
             waiter.kill()
-        except Exception:
-            pass
-        del waiter, template, fut, reply, received_weights
+
+        del waiter, fut, reply, received
         gc.collect()
-        hard_trim()
+        clear_memory()
 
         self.report("PUSH")
         self.log.info("PUSH: transition TRAINING")
         self.set_next_state(TRAINING_STATE)
 
+# ----------------------------
+# Final
+# ----------------------------
 class FinalState(BaseState):
     async def run(self):
         self.log.info("FSM completed. Stopping agent.")
         with contextlib.suppress(Exception):
             self.agent.presence.set_unavailable()
-        # try:
-        #     self.agent.presence.set_unavailable()
-        # except Exception:
-        #     self.log.error("Failed setting presence unavailable")
-        # await asyncio.sleep(5.0)
-        # await self.agent.stop()
 
 def debug_check_single_weight(agent, which="generator"):
     """

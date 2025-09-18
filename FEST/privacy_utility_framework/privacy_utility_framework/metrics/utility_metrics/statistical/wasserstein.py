@@ -3,7 +3,8 @@ import pandas as pd
 from scipy.stats import wasserstein_distance_nd
 import ot
 from enum import Enum
-from privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics import UtilityMetricCalculator
+
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics import UtilityMetricCalculator
 
 
 class WassersteinMethod(Enum):

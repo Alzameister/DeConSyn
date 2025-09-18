@@ -1,5 +1,6 @@
 import argparse
 import glob
+import os
 import re
 import sys
 from pathlib import Path
@@ -40,6 +41,8 @@ from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_me
     JSCalculator
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.ks_test import \
     KSCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.wasserstein import \
+    WassersteinCalculator, WassersteinMethod
 
 
 class SynEvaluator:
@@ -73,10 +76,17 @@ class SynEvaluator:
         self.original_name = original_name
         self.synthetic_name = synthetic_name
         self.run_dir = Path(run_dir) if run_dir else None
+        self.results = pd.DataFrame(columns=[
+            "DCR", "NNDR", "AdversarialAccuracy", "SinglingOut", "Inference", "Linkability", "Disclosure",
+            "RepU", "DiSCO",
+            "Mean", "Median", "Variance", "JS", "KS", "WASSERSTEIN"
+            "CorrelationPearson", "CorrelationSpearman", "PCA",
+            "Consensus"
+        ], index=[self.synthetic_name])
 
         self.metrics = metrics if metrics is not None else [
             "DCR", "NNDR", "AdversarialAccuracy", "SinglingOut", "Inference", "Linkability", "Disclosure",
-            "BasicStats", "JS", "KS",
+            "BasicStats", "JS", "KS", "WASSERSTEIN"
             "CorrelationPearson", "CorrelationSpearman", "PCA",
             "Consensus"
         ]
@@ -113,36 +123,40 @@ class SynEvaluator:
         for name in self.metrics:
             print(name)
             if name == "DCR":
-                r = self._eval_privacy(DCRCalculator(original=full_train, synthetic=synthetic,
-                                                     original_name=self.original_name, synthetic_name=self.synthetic_name))
+                r = DCRCalculator(original=full_train, synthetic=synthetic,
+                                                     original_name=self.original_name, synthetic_name=self.synthetic_name).evaluate()
                 privacy_res[name] = r
                 self._save_txt(name, r, self.privacy_dir)
                 print(r)
+                # Save to self.results dataframe. Row is model name, col is metric name
+                self.results.at[self.synthetic_name, "DCR"] = r if isinstance(r, float) else r.get("DCR", np.nan)
             if name == "NNDR":
-                r = self._eval_privacy(NNDRCalculator(original=full_train, synthetic=synthetic,
-                                                     original_name=self.original_name, synthetic_name=self.synthetic_name))
+                r = NNDRCalculator(original=full_train, synthetic=synthetic,
+                                                     original_name=self.original_name, synthetic_name=self.synthetic_name).evaluate()
                 privacy_res[name] = r
                 self._save_txt(name, r, self.privacy_dir)
+                self.results.at[self.synthetic_name, "NNDR"] = r if isinstance(r, float) else r.get("NNDR", np.nan)
                 print(r)
             elif name == "AdversarialAccuracy":
-                r = self._eval_privacy(
-                    AdversarialAccuracyCalculator(original=full_train, synthetic=synthetic,
-                                                  original_name=self.original_name, synthetic_name=self.synthetic_name))
+                r = AdversarialAccuracyCalculator(original=full_train, synthetic=synthetic,
+                                                  original_name=self.original_name, synthetic_name=self.synthetic_name).evaluate()
                 privacy_res[name] = r
                 self._save_txt(name, r, self.privacy_dir)
+                self.results.at[self.synthetic_name, "AdversarialAccuracy"] = r if isinstance(r, float) else r.get("AdversarialAccuracy", np.nan)
                 print(r)
             elif name == "SinglingOut":
-                r = self._eval_privacy(SinglingOutCalculator(original=full_train, synthetic=synthetic,
-                                                             original_name=self.original_name, synthetic_name=self.synthetic_name))
+                r = SinglingOutCalculator(original=full_train, synthetic=synthetic,
+                                                             original_name=self.original_name, synthetic_name=self.synthetic_name).evaluate()
                 privacy_res[name] = r
+                self.results.at[self.synthetic_name, "SinglingOut"] = r.value if isinstance(r.value, float) else r.get("SinglingOut", np.nan)
                 self._save_txt(name, r, self.privacy_dir)
                 print(r)
             elif name == "Inference":
-                r = self._eval_privacy(
-                    InferenceCalculator(original=full_train, synthetic=synthetic, aux_cols=self.inf_aux_cols,
+                r = InferenceCalculator(original=full_train, synthetic=synthetic, aux_cols=self.inf_aux_cols,
                                         secret=self.secret, regression=self.regression,
-                                        original_name=self.original_name, synthetic_name=self.synthetic_name))
+                                        original_name=self.original_name, synthetic_name=self.synthetic_name).evaluate()
                 privacy_res[name] = r
+                self.results.at[self.synthetic_name, "Inference"] = r.value if isinstance(r.value, float) else r.get("Inference", np.nan)
                 self._save_txt(name, r, self.privacy_dir)
                 print(r)
             elif name == "Linkability":
@@ -150,42 +164,61 @@ class SynEvaluator:
                 link_control_df = full_train.sample(frac=control_frac, random_state=self.seed)
                 link_original_train_df = full_train.drop(link_control_df.index).reset_index(drop=True)
                 link_control_df = link_control_df.reset_index(drop=True)
-                r = self._eval_privacy(LinkabilityCalculator(original=link_original_train_df, synthetic=synthetic,
+                r = LinkabilityCalculator(original=link_original_train_df, synthetic=synthetic,
                                                             aux_cols=self.link_aux_cols, control=link_control_df,
-                                                            original_name=self.original_name, synthetic_name=self.synthetic_name))
+                                                            original_name=self.original_name, synthetic_name=self.synthetic_name).evaluate()
                 privacy_res[name] = r
+                self.results.at[self.synthetic_name, "Linkability"] = r.value if isinstance(r.value, float) else r.get("Linkability", np.nan)
                 self._save_txt(name, r, self.privacy_dir)
                 print(r)
             elif name == "Disclosure":
-                r = self._eval_privacy(
-                    DisclosureCalculator(original=full_train, synthetic=synthetic, keys=self.keys, target=self.target,
-                                        original_name=self.original_name, synthetic_name=self.synthetic_name))
-                privacy_res[name] = r
-                self._save_txt(name, r, self.privacy_dir)
-                print(r)
+                discoCalc = DisclosureCalculator(original=full_train, synthetic=synthetic, keys=self.keys, target=self.target,
+                                        original_name=self.original_name, synthetic_name=self.synthetic_name)
+                res = discoCalc.evaluate()
+                privacy_res[name] = res
+                repU, disco = res
+                self.results.at[self.synthetic_name, "RepU"] = repU
+                self.results.at[self.synthetic_name, "DiSCO"] = disco
+                self._save_txt("RepU", repU, self.privacy_dir)
+                self._save_txt("DiSCO", disco, self.privacy_dir)
+                print(res)
 
 
         # ===================== UTILITY METRICS =====================
         print("Running utility metrics...")
         for name in self.metrics:
-            print(name)
             if name == "BasicStats":
-                r = self._eval_utility(
-                    BasicStatsCalculator(original=full_train, synthetic=synthetic,
-                                         original_name=self.original_name, synthetic_name=self.synthetic_name))
+                r = BasicStatsCalculator(original=full_train, synthetic=synthetic,
+                                         original_name=self.original_name, synthetic_name=self.synthetic_name).evaluate()
                 utility_res[name] = r
+                mean = r['mean']
+                median = r['median']
+                variance = r['var']
+                self.results.at[self.synthetic_name, "Mean"] = mean
+                self.results.at[self.synthetic_name, "Variance"] = variance
+                self.results.at[self.synthetic_name, "Median"] = median
                 self._save_txt(name, r, self.similarity_dir)
                 print(r)
             elif name == "JS":
-                r = self._eval_utility(JSCalculator(original=full_train, synthetic=synthetic,
-                                                    original_name=self.original_name, synthetic_name=self.synthetic_name))
+                r = JSCalculator(original=full_train, synthetic=synthetic,
+                                                    original_name=self.original_name, synthetic_name=self.synthetic_name).evaluate()
                 utility_res[name] = r
+                self.results.at[self.synthetic_name, "JS"] = r
                 self._save_txt(name, r, self.similarity_dir)
                 print(r)
             elif name == "KS":
-                r = self._eval_utility(KSCalculator(original=full_train, synthetic=synthetic,
-                                                    original_name=self.original_name, synthetic_name=self.synthetic_name))
+                r = KSCalculator(original=full_train, synthetic=synthetic,
+                                                    original_name=self.original_name, synthetic_name=self.synthetic_name).evaluate()
                 utility_res[name] = r
+                self.results.at[self.synthetic_name, "KS"] = r
+                self._save_txt(name, r, self.similarity_dir)
+                print(r)
+            elif name == "WASSERSTEIN":
+                wasserstein = WassersteinCalculator(original=full_train, synthetic=synthetic,
+                                                    original_name=self.original_name, synthetic_name=self.synthetic_name)
+                r = wasserstein.evaluate(metric=WassersteinMethod.WASSERSTEIN_SAMPLE, n_iterations=10)
+                utility_res[name] = r
+                self.results.at[self.synthetic_name, "WASSERSTEIN"] = r
                 self._save_txt(name, r, self.similarity_dir)
                 print(r)
 
@@ -201,6 +234,9 @@ class SynEvaluator:
         if "PCA" in self.metrics:
             print("  PCA...")
             artifacts["PCA"] = str(self._pca(full_train, synthetic))
+        if "PCA3D" in self.metrics:
+            print("  PCA3D...")
+            artifacts["PCA3D"] = str(self._pca_3d(full_train, synthetic))
         if "Consensus" in self.metrics:
             print("  Consensus...")
             if not self.run_dir:
@@ -208,11 +244,92 @@ class SynEvaluator:
                     "Consensus metric requires --run-dir pointing to the run folder that contains agent_* subdirs.")
             artifacts["Consensus"] = self._consensus(self.run_dir)
 
+        results_path = os.path.join(self.output_dir, "results.csv")
+        # If it already exists, load and update
+        if os.path.exists(results_path):
+            existing = pd.read_csv(results_path, index_col=0)
+            self.results.update(existing)
+
+        self.results.to_csv(results_path)
         result =  {"privacy": privacy_res, "utility": utility_res, "artifacts": artifacts}
         p = self.output_dir / "results.txt"
         with open(p, "w", encoding="utf-8") as f:
             f.write(str(result))
         return result
+
+    def evaluate_iterations(self, gap: int = 50):
+        """
+        Evaluate privacy and statistical metrics at checkpoints
+        Parameters
+        ----------
+        gap : int
+            Interval between iterations to evaluate (e.g., every 50 iters)
+
+        Returns
+        -------
+
+        """
+        base_dir = self.run_dir / "agent_00"
+        pattern = base_dir / "iter-*-model.pkl"
+        files = sorted(glob.glob(str(pattern)))
+        iterations = []
+
+        for p in files:
+            pth = Path(p)
+            m = re.search(r"iter-(\d+)-model\.pkl$", pth.name)
+            if not m:
+                continue
+            t = int(m.group(1))
+            if t % gap != 0:
+                continue
+            iterations.append((t, pth))
+
+        if not iterations:
+            raise ValueError(f"No iteration checkpoints found under {base_dir}")
+
+        print(f"Found {len(iterations)} checkpoints to evaluate (every {gap} iters).")
+
+        iterations.sort(key=lambda x: x[0])
+        it_root = self.output_dir / "iterations"
+        it_root.mkdir(parents=True, exist_ok=True)
+
+        all_privacy, all_utility = {}, {}
+        metrics = [m for m in self.metrics if m.lower() != "consensus"]
+        for t, pth in iterations:
+            print(f"Iteration {t}...")
+            out_dir = it_root / f"iter-{t:05d}"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            
+            eval_i = SynEvaluator(
+            manifest_path=self.manifest_path,
+            model_path=str(pth),
+            output_dir=str(out_dir),
+            original_name=self.original_name,
+            synthetic_name=self.synthetic_name,
+            metrics=metrics,
+            keys=self.keys,
+            target=self.target,
+            inf_aux_cols=self.inf_aux_cols,
+            secret=self.secret,
+            regression=self.regression,
+            link_aux_cols=self.link_aux_cols,
+            control_frac=self.control_frac,
+            run_dir=None
+            )
+            eval_i.seed = self.seed
+            res = eval_i.evaluate()
+            all_privacy[t] = res["privacy"]
+            all_utility[t] = res["utility"]
+            print(f"  Privacy: {res['privacy']}")
+            print(f"  Utility: {res['utility']}")
+            p_priv = out_dir / "privacy.txt"
+            p_util = out_dir / "utility.txt"
+            with open(p_priv, "w", encoding="utf-8") as f:
+                f.write(str(res["privacy"]))
+            with open(p_util, "w", encoding="utf-8") as f:
+                f.write(str(res["utility"]))
+
+        return all_privacy, all_utility
 
     # --- helpers ---
     @staticmethod
@@ -281,6 +398,60 @@ class SynEvaluator:
         out = self.similarity_dir / "PCA_Original_vs_Synthetic.png"
         plt.savefig(out)
         plt.clf()
+        return out
+
+    def _pca_3d(self, full_train: pd.DataFrame, synthetic: pd.DataFrame) -> Path:
+        """
+        Build an interactive 3D PCA scatter with Plotly and save as HTML.
+        Returns the HTML path.
+        """
+        from sklearn.decomposition import PCA
+        import plotly.graph_objs as go
+        from plotly.offline import plot as plotly_plot
+
+        combined = pd.concat([full_train, synthetic], ignore_index=True)
+        X = combined.select_dtypes(include=[np.number]).fillna(0)
+
+        pca = PCA(n_components=3)
+        coords = pca.fit_transform(X)
+
+        n = len(full_train)
+        x_o, y_o, z_o = coords[:n, 0], coords[:n, 1], coords[:n, 2]
+        x_s, y_s, z_s = coords[n:, 0], coords[n:, 1], coords[n:, 2]
+
+        evr = pca.explained_variance_ratio_
+        title = (f"PCA 3D: Original vs Synthetic "
+                 f"(Explained Var %: PC1 {evr[0]:.1%}, PC2 {evr[1]:.1%}, PC3 {evr[2]:.1%})")
+
+        fig = go.Figure()
+
+        fig.add_trace(go.Scatter3d(
+            x=x_o, y=y_o, z=z_o,
+            mode="markers",
+            name="Original",
+            opacity=0.6,
+            marker=dict(size=3)
+        ))
+        fig.add_trace(go.Scatter3d(
+            x=x_s, y=y_s, z=z_s,
+            mode="markers",
+            name="Synthetic",
+            opacity=0.6,
+            marker=dict(size=3)
+        ))
+
+        fig.update_layout(
+            title=title,
+            scene=dict(
+                xaxis_title="PC1",
+                yaxis_title="PC2",
+                zaxis_title="PC3",
+            ),
+            legend=dict(x=0.01, y=0.99)
+        )
+
+        out = self.similarity_dir / "PCA3D_Original_vs_Synthetic.html"
+        plotly_plot(fig, filename=str(out), auto_open=False, include_plotlyjs='cdn')
         return out
 
     # ===================== CONSENSUS METRIC (model-parameter-level) =====================
@@ -505,7 +676,6 @@ class SynEvaluator:
             "potential_plot": str(fig4),
         }
 
-
     def _save_txt(self, metric_name: str, result: Union[float, dict], base_dir: Path = None) -> None:
         base = base_dir if base_dir is not None else self.output_dir
         base.mkdir(parents=True, exist_ok=True)
@@ -531,6 +701,15 @@ def cli(argv: List[str] = None) -> int:
                         help="Path to pickled generative model (.pkl).")
     parser.add_argument("--output-dir", required=True,
                         help="Directory to write results/artifacts.")
+    parser.add_argument("--iter-eval", action="store_true",
+                        help="Run iteration-wise evaluation instead of single model.")
+    parser.add_argument("--iter-interval", type=int, default=50,
+                        help="Evaluate checkpoints whose iteration index is a multiple of this value.")
+
+    parser.add_argument("--compare-runs", action="store_true",
+                        help="Compare multiple runs inside --runs-dir and plot per-metric comparisons.")
+    parser.add_argument("--runs-dir", default=None,
+                        help="Parent directory that contains multiple run subfolders to compare.")
 
     # Labels
     parser.add_argument("--original-name", default="adult",
@@ -544,10 +723,10 @@ def cli(argv: List[str] = None) -> int:
         type=_csv_list,
         default=["DCR", "NNDR", "AdversarialAccuracy", "SinglingOut", "Inference",
                  "Linkability", "Disclosure", "BasicStats", "JS", "KS",
-                 "CorrelationPearson", "CorrelationSpearman", "PCA", "Consensus"],
+                 "CorrelationPearson", "CorrelationSpearman", "PCA", "PCA3D", "Consensus"],
         help=("Comma-separated metric names to run. Supported: "
               "DCR, NNDR, AdversarialAccuracy, SinglingOut, Inference, Linkability, Disclosure, "
-              "BasicStats, JS, KS, CorrelationPearson, CorrelationSpearman, PCA")
+              "BasicStats, JS, KS, CorrelationPearson, CorrelationSpearman, PCA, PCA3D, Consensus.")
     )
 
     # Disclosure
@@ -634,6 +813,37 @@ def cli(argv: List[str] = None) -> int:
     # Optional: set seed if you also want to seed numpy/py modules consistently inside evaluate()
     evaluator.seed = args.seed
 
+    # === iteration-wise evaluation ===
+    if args.iter_eval:
+        if not args.run_dir:
+            print("ERROR: --run-dir is required for --iter-eval (to locate agent_00/iter-*-model.pkl).",
+                  file=sys.stderr)
+            return 2
+        print(f"[iter-eval] Running iteration sweep every {args.iter_interval} iters...")
+        all_privacy, all_utility = evaluator.evaluate_iterations(gap=args.iter_interval)
+        print("\n========= ITERATION SWEEP DONE =========")
+        # Optional: brief summary sizes
+        print(f"Iterations evaluated (privacy): {len(all_privacy)}")
+        print(f"Iterations evaluated (utility): {len(all_utility)}")
+        return 0
+
+    # === compare multiple runs ===
+    if args.compare_runs:
+        if not args.runs_dir:
+            print("ERROR: --runs-dir is required with --compare-runs.", file=sys.stderr)
+            return 2
+        # You can reuse the same evaluator; params don't matter for this mode.
+        artifacts = evaluator.compare_runs(args.runs_dir)
+        print("\n========= RUNS COMPARISON DONE =========")
+        if artifacts:
+            print("Generated plots:")
+            for k, v in artifacts.items():
+                print(f"  {k}: {v}")
+        else:
+            print("No comparable metrics found across runs (or only one run had a given metric).")
+        return 0
+
+    # === Default: single-model evaluation ===
     results = evaluator.evaluate()
     print("\n========= SUMMARY =========")
     print(results)

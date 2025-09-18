@@ -4,7 +4,6 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
-import spade.message
 import torch
 from spade.agent import Agent
 from spade.template import Template
@@ -13,7 +12,7 @@ from loguru import logger
 from DeFeSyn.consensus.Consensus import Consensus
 from DeFeSyn.spade.FSMBehaviour import NodeFSMBehaviour, TRAINING_STATE, StartState, TrainingState, \
     PullState, PushState, FinalState
-from DeFeSyn.spade.ReceiveBehaviour import BarrierHelloResponder, BarrierAckRouter, ReceiveBehaviour, \
+from DeFeSyn.spade.ReceiveBehaviour import BarrierHelloResponder, BarrierAckRouter, \
     ReceiveAckBehaviour
 from DeFeSyn.spade.FSMBehaviour import START_STATE, PULL_STATE, PUSH_STATE, FINAL_STATE
 from DeFeSyn.spade.PresenceBehaviour import PresenceBehaviour

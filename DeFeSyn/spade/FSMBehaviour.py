@@ -14,6 +14,7 @@ from spade.behaviour import FSMBehaviour, State, OneShotBehaviour
 from spade.message import Message
 from spade.template import Template
 
+from DeFeSyn.spade.PresenceBehaviour import PresenceBehaviour
 from DeFeSyn.spade.ctgan_model import CTGANModel
 from DeFeSyn.utils.io import make_path, save_weights_pt, save_model_pickle
 
@@ -138,12 +139,9 @@ class BaseState(State, ABC):
             self.agent.log.debug("ev() failed for event='{}': {}", event, e)
 
     def _active_neighbors(self) -> set[str]:
-        active = getattr(self.agent, "active_neighbors", None)
-        if isinstance(active, set):
-            self.agent.log.info("Active neighbors: {}", active)
-            return active
-        contacts = self.agent.presence.get_contacts()
-        return {str(jid) for jid, c in contacts.items() if c.is_available()}
+        active = getattr(self.agent, "active_neighbors", set())
+        self.agent.log.info("Active neighbors: {}", active)
+        return set(active)
 
     # ---- Encoding helpers ----
     def _encode_weights(self) -> str:
@@ -241,18 +239,22 @@ class BaseState(State, ABC):
 # ----------------------------
 class StartState(BaseState):
     async def run(self):
-        # small delay to let PresenceBehaviour populate
         await asyncio.sleep(5.0)
-
         neighbors = list(getattr(self.agent, "neighbors", []))
         token = f"barrier-{self.agent.id}-{uuid.uuid4().hex[:6]}"
+
         q: asyncio.Queue[str] = asyncio.Queue()
         self.agent.barrier_queues[token] = q
 
-        async def ping_all(targets: Iterable[str]):
-            await asyncio.gather(*[self._send_barrier_hello(j, token) for j in targets])
+        async def send_hellos(targets: Iterable[str]):
+            for jid in targets:
+                msg = Message(to=str(jid))
+                msg.set_metadata("performative", MT_INFORM)
+                msg.set_metadata("type", T_BARRIER_HELLO)
+                msg.set_metadata("token", token)
+                await self.send(msg)
 
-        await ping_all(neighbors)
+        await send_hellos(neighbors)
         got = set()
         deadline = time.perf_counter() + BARRIER_TOTAL_TIMEOUT
         resend_at = time.perf_counter() + HELLO_RESEND_SEC
@@ -268,21 +270,24 @@ class StartState(BaseState):
 
                 now = time.perf_counter()
                 if now >= resend_at and len(got) < len(neighbors):
-                    await ping_all([j for j in neighbors if j not in got])
+                    missing = [j for j in neighbors if j not in got]
+                    await send_hellos(missing)
                     resend_at = now + HELLO_RESEND_SEC
         finally:
             self.agent.barrier_queues.pop(token, None)
 
-        # Set consensus degree based on who actually ACKed
-        degree = len(got) if len(got) < len(neighbors) else len(neighbors)
         if len(got) < len(neighbors):
             self.log.warning("START: barrier partial {}/{} → proceed anyway", len(got), len(neighbors))
+            self.agent.consensus.set_degree(len(got))
         else:
             self.log.info("START: barrier complete")
-        self.agent.consensus.set_degree(degree)
+            self.agent.consensus.set_degree(len(neighbors))
 
-        clear_memory()
+        # Free up memory
+        gc.collect()
+
         self.set_next_state(TRAINING_STATE)
+
 
 # ----------------------------
 # Training
@@ -432,9 +437,7 @@ class PullState(BaseState):
             self.agent.add_behaviour(
                 waiter,
                 Template(
-                    metadata={"performative": MT_INFORM, "type": T_GOSSIP_WEIGHTS, "rid": rid},
-                    sender=neighbor
-                )
+                    metadata={"performative": MT_INFORM, "type": T_GOSSIP_WEIGHTS, "rid": rid}                )
             )
 
             self.log.info("PULL: waiting for weights from {} (rid'={})", neighbor, rid)
@@ -564,7 +567,7 @@ class PushState(BaseState):
         waiter = _WaitResponse(fut, peer)
         self.agent.add_behaviour(
             waiter,
-            Template(metadata={"performative": MT_INFORM, "type": T_GOSSIP_WEIGHTS, "rid": rid}, sender=peer)
+            Template(metadata={"performative": MT_INFORM, "type": T_GOSSIP_WEIGHTS, "rid": rid})
         )
 
         self.log.info("Waiting for weights from {} (rid={})", peer, rid)

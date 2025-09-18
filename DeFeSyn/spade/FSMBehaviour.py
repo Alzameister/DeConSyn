@@ -15,7 +15,7 @@ from spade.behaviour import FSMBehaviour, State, OneShotBehaviour
 from spade.message import Message
 from spade.template import Template
 
-from DeFeSyn.models.CTGAN.wrapper import CTGANModel
+from DeFeSyn.spade.ctgan_model import CTGANModel
 from DeFeSyn.utils.io import make_path, save_weights_pt, save_model_pickle
 
 # ----------------------------
@@ -135,7 +135,12 @@ class BaseState(State, ABC):
 
     # ---- Encoding helpers ----
     def _encode_weights(self) -> dict:
-        return self.agent.model.encode()
+        if not getattr(self.agent, "model", None) or not self.agent.model.is_trained():
+            raise RuntimeError("Model not trained; cannot encode weights.")
+        pkg = self.agent.model.encode()
+        if not pkg:
+            raise RuntimeError("Encoding returned empty payload; model snapshot missing.")
+        return pkg
 
     def _decode_weights(self, body: str) -> dict:
         return self.agent.model.decode(json.loads(body))
@@ -346,13 +351,13 @@ class TrainingState(BaseState):
             self.log.info("TRAIN: cold start (no weights)")
             return
         self.log.info("TRAIN: warm start → loading weights")
-        self.agent.model.load_weights(self.agent.weights)
+        self.agent.model.set_weights(self.agent.weights)
         debug_check_single_weight(self.agent, which="generator")
         debug_check_single_weight(self.agent, which="discriminator")
 
     async def _train(self) -> TrainSnapshot:
         t0 = time.perf_counter()
-        await asyncio.to_thread(self.agent.model.train)
+        await asyncio.to_thread(self.agent.model.fit)
         return TrainSnapshot(ms=(time.perf_counter() - t0) * 1000.0)
 
     def _capture_losses_and_weights(self):
@@ -430,7 +435,7 @@ class PullState(BaseState):
                 eps_j=eps_j,
             )
             if self.agent.model:
-                self.agent.model.load_weights(self.agent.weights)
+                self.agent.model.set_weights(self.agent.weights)
 
             consumed += 1
             self.log.info(
@@ -582,7 +587,7 @@ class PushState(BaseState):
             eps_j=eps_j,
         )
         if self.agent.model:
-            self.agent.model.load_weights(self.agent.weights)
+            self.agent.model.set_weights(self.agent.weights)
         self.report("PUSH after Consensus")
 
         self._persist_weights(it)

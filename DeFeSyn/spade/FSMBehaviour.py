@@ -29,8 +29,14 @@ RECEIVE_STATE = "RECEIVE_STATE"
 FINAL_STATE = "FINAL_STATE"
 
 MT_INFORM = "inform"
+
+T_GOSSIP_REQ = "gossip-req"
+T_GOSSIP_ACK = "gossip-ack"
+T_GOSSIP_WEIGHTS = "gossip-weights"
+
 T_GOSSIP = "gossip"
 T_GOSSIP_REPLY = "gossip-reply"
+
 T_BARRIER_HELLO = "barrier-hello"
 T_BARRIER_ACK = "barrier-ack"
 
@@ -137,13 +143,13 @@ class BaseState(State, ABC):
     def _encode_weights(self) -> dict:
         if not getattr(self.agent, "model", None) or not self.agent.model.is_trained():
             raise RuntimeError("Model not trained; cannot encode weights.")
-        pkg = self.agent.model.encode()
-        if not pkg:
+        blob = self.agent.model.encode()  # returns base85+zlib string now
+        if not blob:
             raise RuntimeError("Encoding returned empty payload; model snapshot missing.")
-        return pkg
+        return blob
 
     def _decode_weights(self, body: str) -> dict:
-        return self.agent.model.decode(json.loads(body))
+        return self.agent.model.decode(body)
 
     def _msg_eps(self, msg, fallback: float) -> float:
         return parse_float(msg.get_metadata("eps"), default=fallback)
@@ -188,18 +194,19 @@ class BaseState(State, ABC):
         msg.set_metadata("token", token)
         await self.send(msg)
 
-    async def _send_gossip(self, peer: str, it: int, pkg: dict):
+    async def _send_gossip(self, peer: str, it: int, blob: str):
         msg_id = f"{self.agent.id}-{it}-{uuid.uuid4().hex[:6]}"
         version = str(it)
 
         msg = Message(to=str(peer))
         msg.set_metadata("performative", MT_INFORM)
         msg.set_metadata("type", T_GOSSIP)
-        msg.set_metadata("content-type", "application/octet-stream+b64")
+        msg.set_metadata("content-type", "application/x-ctgan-weights")
+        msg.set_metadata("content-encoding", "b85+zlib")
         msg.set_metadata("msg_id", msg_id)
         msg.set_metadata("version", version)
         msg.set_metadata("eps", f"{self.agent.consensus.get_eps():.12f}")
-        msg.body = await asyncio.to_thread(json.dumps, pkg)
+        msg.body = blob
 
         await self.send(msg)
 
@@ -211,19 +218,20 @@ class BaseState(State, ABC):
 
         return msg_id, version
 
-    async def _send_gossip_reply(self, req_msg, pkg: dict, eps_i: Optional[float], ver: str) -> str:
+    async def _send_gossip_reply(self, req_msg, blob: str, eps_i: Optional[float], ver: str) -> str:
         in_id = req_msg.get_metadata("msg_id") or f"in-{uuid.uuid4().hex[:6]}"
         resp_id = f"resp-{in_id}"
         resp = Message(to=req_msg.sender)
         resp.set_metadata("performative", MT_INFORM)
         resp.set_metadata("type", T_GOSSIP_REPLY)
-        resp.set_metadata("content-type", "application/octet-stream+b64")
+        resp.set_metadata("content-type", "application/x-ctgan-weights")
+        resp.set_metadata("content-encoding", "b85+zlib")
         resp.set_metadata("msg_id", resp_id)
         resp.set_metadata("version", ver)
         resp.set_metadata("in_reply_to", in_id)
         if eps_i is not None:
             resp.set_metadata("eps", f"{eps_i:.12f}")
-        resp.body = json.dumps(pkg)
+        resp.body = blob
         await self.send(resp)
         self.agent.event.bind(
             event="RESPOND_SEND",

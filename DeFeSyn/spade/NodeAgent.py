@@ -1,4 +1,5 @@
 import asyncio
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -89,6 +90,7 @@ class NodeAgent(Agent):
         self.consensus: Consensus = consensus or Consensus(alpha=cfg.alpha)
 
         # queues for gossip + barrier tokens
+        self.pending_outbound: dict[str, asyncio.Future] = {}   # rid -> Future for ACK
         self.queue: asyncio.Queue = asyncio.Queue()
         self.push_queue: asyncio.Queue = asyncio.Queue()
         self.barrier_queues: dict[str, asyncio.Queue[str]] = {}
@@ -148,4 +150,8 @@ class NodeAgent(Agent):
 
         fsm = NodeFSMBehaviour(states=states, transitions=transitions, initial=START_STATE)
         self.add_behaviour(fsm)
+
+def make_rid(self) -> str:
+    # short, unique per sender
+    return f"{self.jid.localpart}-{uuid.uuid4().hex[:12]}"
 

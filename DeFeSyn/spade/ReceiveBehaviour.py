@@ -75,19 +75,20 @@ class ReceiveBehaviour(CyclicBehaviour):
         resp_id = f"resp-{in_msg_id}"
         resp.set_metadata("performative", "inform")
         resp.set_metadata("type", "gossip-reply")
-        resp.set_metadata("content-type", "application/octet-stream+b64")
+        resp.set_metadata("content-type", "application/x-ctgan-weights")
+        resp.set_metadata("content-encoding", "b85+zlib")
         resp.set_metadata("msg_id", resp_id)
         resp.set_metadata("version", ver)
         resp.set_metadata("in_reply_to", in_msg_id)
         if eps_i is not None:
             resp.set_metadata("eps", f"{eps_i:.12f}")
 
-        pkg_json = await to_thread(json.dumps, pkg)
-        resp.body = pkg_json
+        # pkg_json = await to_thread(json.dumps, pkg)
+        resp.body = pkg
 
         await self.send(resp)
 
-        bytes_out = len(pkg_json)
+        bytes_out = len(pkg)
         self.agent.log.info(
             "RESPOND_SEND: to {} (id={}, ver_sent={}, eps_i={}, bytes={})",
             to_jid, resp_id, ver, f"{eps_i:.6f}" if eps_i is not None else "n/a", bytes_out

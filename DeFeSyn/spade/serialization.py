@@ -2,25 +2,50 @@ import base64
 import gzip
 import hashlib
 import io
-from typing import Dict, Any
+import struct
+import zlib
+from typing import Dict, Any, Union, Tuple
 
 import torch
 
 
 def _pack(sd: Dict[str, Any]) -> bytes:
-    with io.BytesIO() as buf:
-        torch.save(sd, buf)           # modern ZIP serialization
-        raw = buf.getvalue()
-    return gzip.compress(raw)
+    buf = io.BytesIO()
+    torch.save(sd, buf, _use_new_zipfile_serialization=False)
+    return zlib.compress(buf.getvalue(), level=3)
 
-def _unpack(blob: bytes) -> Dict[str, Any]:
-    buf = io.BytesIO(gzip.decompress(blob))
-    obj = torch.load(buf, map_location="cpu")
-    # Normalize dtypes (float64 -> float32) for cross-env consistency
+def _unpack(comp: bytes) -> Dict[str, Any]:
+    obj = torch.load(io.BytesIO(zlib.decompress(comp)), map_location="cpu")
     for k, v in list(obj.items()):
         if torch.is_tensor(v) and v.dtype == torch.float64:
             obj[k] = v.float()
     return obj
+
+def encode_state_dict_pair_blob(
+    gen_sd: Dict[str, Any],
+    dis_sd: Dict[str, Any],
+    as_ascii: bool = True,
+) -> Union[str, bytes]:
+    g = _pack(gen_sd)
+    d = _pack(dis_sd)
+    header = struct.pack("<QQ", len(g), len(d))
+    blob = header + g + d
+    return base64.b85encode(blob).decode("ascii") if as_ascii else blob
+
+def decode_state_dict_pair_blob(
+    blob: Union[str, bytes],
+) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    if isinstance(blob, str):
+        blob = base64.b85decode(blob.encode("ascii"))
+    if len(blob) < 16:
+        raise ValueError("Blob too small")
+    gen_len, dis_len = struct.unpack_from("<QQ", blob, 0)
+    off = 16
+    if len(blob) != 16 + gen_len + dis_len:
+        raise ValueError("Length mismatch")
+    g = blob[off:off+gen_len]; off += gen_len
+    d = blob[off:off+dis_len]
+    return _unpack(g), _unpack(d)
 
 
 def encode_state_dict_pair(gen_sd: Dict[str, Any], dis_sd: Dict[str, Any]) -> Dict[str, Any]:

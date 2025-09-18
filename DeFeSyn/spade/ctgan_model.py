@@ -4,7 +4,8 @@ from typing import Dict, Tuple, Optional, Any
 import torch
 
 from DeFeSyn.models.CTGAN.synthesizers.ctgan import CTGAN
-from DeFeSyn.spade.serialization import decode_state_dict_pair, encode_state_dict_pair
+from DeFeSyn.spade.serialization import decode_state_dict_pair, encode_state_dict_pair, encode_state_dict_pair_blob, \
+    decode_state_dict_pair_blob
 from DeFeSyn.spade.snapshots import snapshot_state_dict_pair
 
 # {"generator": {...}, "discriminator": {...}}
@@ -127,12 +128,14 @@ class CTGANModel:
         with self._weights_lock:
             if self._cpu_weights is None:
                 return None
-            return encode_state_dict_pair(self._cpu_weights["generator"], self._cpu_weights["discriminator"])
+            return encode_state_dict_pair_blob(self._cpu_weights["generator"], self._cpu_weights["discriminator"], as_ascii=True)
+            # return encode_state_dict_pair(self._cpu_weights["generator"], self._cpu_weights["discriminator"])
 
-    def decode(self, package: Dict[str, Any]) -> Weights:
+    def decode(self, package: str) -> Weights:
         """Inverse of `encode`."""
-        g, d = decode_state_dict_pair(package)
+        g, d = decode_state_dict_pair_blob(package)
+        # g, d = decode_state_dict_pair(package)
         return {"generator": g, "discriminator": d}
 
-    def decode_and_load(self, package: Dict[str, Any]) -> None:
+    def decode_and_load(self, package: str) -> None:
         self.set_weights(self.decode(package))

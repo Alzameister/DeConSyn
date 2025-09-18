@@ -83,18 +83,18 @@ class Graph:
         G = nx.watts_strogatz_graph(n, k, p, seed=seed)
         pos = nx.circular_layout(G)
 
-        plt.figure(figsize=(6, 6))
-        nx.draw(
-            G, pos,
-            with_labels=True,
-            node_size=600,
-            node_color="lightblue",
-            font_size=8,
-            font_weight="bold",
-            edge_color="gray"
-        )
-        plt.title(f"Small-World Graph (n={n}, k={k}, p={p})")
-        plt.show()
+        # plt.figure(figsize=(6, 6))
+        # nx.draw(
+        #     G, pos,
+        #     with_labels=True,
+        #     node_size=600,
+        #     node_color="lightblue",
+        #     font_size=8,
+        #     font_weight="bold",
+        #     edge_color="gray"
+        # )
+        # plt.title(f"Small-World Graph (n={n}, k={k}, p={p})")
+        # plt.show()
 
         topology = {agent_jid(i): [agent_jid(j) for j in G.neighbors(i)] for i in G.nodes()}
         return topology

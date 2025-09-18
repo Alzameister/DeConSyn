@@ -125,7 +125,7 @@ class CTGANModel:
                     out[side][k] = v.clone() if torch.is_tensor(v) else v
             return out
 
-    def load_weights(self, weights: Dict[str, Dict[str, torch.Tensor]]) -> None:
+    def set_weights(self, weights: Dict[str, Dict[str, torch.Tensor]]) -> None:
         """Load a state dict into CTGAN and refresh the CPU snapshot (atomic)."""
         if not weights or "generator" not in weights or "discriminator" not in weights:
             return
@@ -209,4 +209,4 @@ class CTGANModel:
     def decode_and_load(self, package: Dict[str, Any]) -> None:
         """Convenience: decode a package and immediately load it."""
         decoded = self.decode(package)
-        self.load_weights(decoded)
+        self.set_weights(decoded)

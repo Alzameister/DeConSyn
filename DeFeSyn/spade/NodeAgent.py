@@ -4,6 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 import pandas as pd
+import spade.message
 import torch
 from spade.agent import Agent
 from spade.template import Template
@@ -12,7 +13,8 @@ from loguru import logger
 from DeFeSyn.consensus.Consensus import Consensus
 from DeFeSyn.spade.FSMBehaviour import NodeFSMBehaviour, TRAINING_STATE, StartState, TrainingState, \
     PullState, PushState, FinalState
-from DeFeSyn.spade.ReceiveBehaviour import BarrierHelloResponder, BarrierAckRouter, ReceiveBehaviour
+from DeFeSyn.spade.ReceiveBehaviour import BarrierHelloResponder, BarrierAckRouter, ReceiveBehaviour, \
+    ReceiveAckBehaviour
 from DeFeSyn.spade.FSMBehaviour import START_STATE, PULL_STATE, PUSH_STATE, FINAL_STATE
 from DeFeSyn.spade.PresenceBehaviour import PresenceBehaviour
 from DeFeSyn.utils.io import get_repo_root
@@ -90,7 +92,10 @@ class NodeAgent(Agent):
         self.consensus: Consensus = consensus or Consensus(alpha=cfg.alpha)
 
         # queues for gossip + barrier tokens
-        self.pending_outbound: dict[str, asyncio.Future] = {}   # rid -> Future for ACK
+        # Dictionary of neighbor JID and request SPADE message
+        self.pending_gossip: dict = {
+            str(n): None for n in self.neighbors
+        }
         self.queue: asyncio.Queue = asyncio.Queue()
         self.push_queue: asyncio.Queue = asyncio.Queue()
         self.barrier_queues: dict[str, asyncio.Queue[str]] = {}
@@ -112,8 +117,8 @@ class NodeAgent(Agent):
         # 1) Presence (ACo-L): auto-subscribe + track active neighbors + update degree/epsilon
         self.add_behaviour(PresenceBehaviour(poll_secs=2.0))
         self.add_behaviour(
-            ReceiveBehaviour(),
-            template=Template(metadata={"performative": "inform", "type": "gossip"})
+            ReceiveAckBehaviour(),
+            template=Template(metadata={"performative": "inform", "type": "gossip-req"})
         )
         self.add_behaviour(
             BarrierHelloResponder(),

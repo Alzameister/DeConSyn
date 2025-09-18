@@ -1,5 +1,6 @@
-import math
 import threading
+from typing import Dict, Optional, Any
+
 import torch, io, gzip, base64, hashlib
 
 from DeFeSyn.models.CTGAN.synthesizers.ctgan import CTGAN
@@ -7,43 +8,61 @@ from DeFeSyn.models.CTGAN.synthesizers.ctgan import CTGAN
 
 class CTGANModel:
     """
-    CTGANModel is a wrapper for the CTGAN synthesizer from the ctgan library.
+    Thin wrapper around ctgan.CTGAN that:
+      - manages device / cuda flag
+      - maintains an atomic CPU snapshot for cheap, thread-safe reads
+      - (de)serializes weights with gzip+base64 and a checksum
     """
-    def __init__(self, full_data, data, discrete_columns, epochs, verbose=True,
-                 device: str = "cpu"):
-        """
-        Initialize the CTGAN model.
 
+    def __init__(
+            self,
+            full_data,
+            data,
+            discrete_columns,
+            epochs: int,
+            verbose: bool = True,
+            device: str = "cpu",
+    ):
+        """
         Args:
-            data (pd.DataFrame): The training data.
-            discrete_columns (list): List of discrete columns in the data.
-            epochs (int): Number of training epochs.
+            full_data: Global/full dataset (optional, used by CTGAN.fit if provided).
+            data: Partition used to train this node.
+            discrete_columns: List[str] of discrete column names.
+            epochs: Number of training epochs.
+            verbose: Verbose training logs from CTGAN.
+            device: "cpu" or "cuda[:index]".
         """
         self.full_data = full_data
         self.data = data
-        self.discrete_columns = discrete_columns
-        self.epochs = epochs
-        self.verbose = verbose
-        if device.startswith("cuda") and torch.cuda.is_available():
+        self.discrete_columns = list(discrete_columns or [])
+        self.epochs = int(epochs)
+        self.verbose = bool(verbose)
+
+        if str(device).startswith("cuda") and torch.cuda.is_available():
             self.device = torch.device(device)
-            use_cuda_flag = True          # ctgan expects bool
+            use_cuda_flag = True
         else:
             self.device = torch.device("cpu")
             use_cuda_flag = False
+
         self.model = CTGAN(
             epochs=self.epochs,
             verbose=self.verbose,
-            cuda=use_cuda_flag
+            cuda=use_cuda_flag,
         )
-        self.weights: dict = {}
+
+        # Optional warm-start state provided by caller
+        self.weights: Dict[str, Dict[str, torch.Tensor]] = {}
+
+        # Concurrency: atomic CPU snapshots
         self._weights_lock = threading.RLock()
-        # Last CPU snapshot (immutable tensors) for cheap reads
-        self._cpu_weights: dict | None = None
-        self._legacy_serialize = True  # keep existing format flag
+        self._cpu_weights: Optional[Dict[str, Dict[str, torch.Tensor]]] = None
 
-
-    def _move_modules(self):
-        # ctgan builds networks before/inside fit; guard attributes
+    # ----------------------------
+    # Utilities
+    # ----------------------------
+    def _move_modules(self) -> None:
+        """Ensure CTGAN's internal modules live on the configured device."""
         G = getattr(self.model, "_generator", None)
         D = getattr(self.model, "_discriminator", None)
         if G is not None:
@@ -51,90 +70,76 @@ class CTGANModel:
         if D is not None:
             D.to(self.device)
 
-    def _snapshot_cpu(self) -> dict:
+    def _snapshot_cpu(self) -> Dict[str, Dict[str, torch.Tensor]]:
         """
-        Atomic (under lock) CPU snapshot of current model parameters.
-        Tensors are detached and cloned to avoid later mutation.
+        CPU snapshot of current parameters.
+        Tensors are detached+cloned to remain immutable for readers.
         """
         G = self.model._generator
         D = self.model._discriminator
-        gen_sd = {}
-        dis_sd = {}
+        gen_sd: Dict[str, Any] = {}
+        dis_sd: Dict[str, Any] = {}
         for k, v in G.state_dict().items():
             gen_sd[k] = v.detach().cpu().clone() if torch.is_tensor(v) else v
         for k, v in D.state_dict().items():
             dis_sd[k] = v.detach().cpu().clone() if torch.is_tensor(v) else v
         return {"generator": gen_sd, "discriminator": dis_sd}
 
-    def _refresh_cpu_snapshot(self):
+    def _refresh_cpu_snapshot(self) -> None:
         with self._weights_lock:
             self._cpu_weights = self._snapshot_cpu()
 
-    def train(self):
-        """
-        Train the CTGAN model on the provided data.
-        """
+    # ----------------------------
+    # Public
+    # ----------------------------
+    def train(self) -> None:
+        """Fit CTGAN; refresh GPU placement and CPU snapshot afterwards."""
         self.model.fit(
             full_data=self.full_data,
             train_data=self.data,
             discrete_columns=self.discrete_columns,
-            gen_state_dict=self.weights.get('generator', None),
-            dis_state_dict=self.weights.get('discriminator', None)
+            gen_state_dict=self.weights.get("generator"),
+            dis_state_dict=self.weights.get("discriminator"),
         )
         self._move_modules()
         self._refresh_cpu_snapshot()
 
-    def sample(self, num_samples, seed=42):
-        """
-        Generate synthetic samples from the trained CTGAN model.
-
-        Args:
-            num_samples (int): Number of samples to generate.
-
-        Returns:
-            pd.DataFrame: Generated synthetic samples.
-        """
+    def sample(self, num_samples: int, seed: int = 42):
+        """Generate synthetic samples from the trained CTGAN model."""
         return self.model.sample(num_samples, random_state=seed)
 
-    def get_weights(self):
+    def get_weights(self) -> Optional[Dict[str, Dict[str, torch.Tensor]]]:
         """
-        Get the weights of the trained CTGAN model.
-
-        Returns:
-            dict: Weights of the CTGAN model.
+        Return a deep-copied CPU state dict (safe for caller mutation) or None if not ready.
+        {
+          "generator": {name: tensor, ...},
+          "discriminator": {name: tensor, ...}
+        }
         """
         with self._weights_lock:
             if self._cpu_weights is None:
                 return None
-            # Deep copy (clone tensors) so caller can mutate freely
             out = {"generator": {}, "discriminator": {}}
             for side in ("generator", "discriminator"):
                 for k, v in self._cpu_weights[side].items():
-                    if torch.is_tensor(v):
-                        out[side][k] = v.clone()
-                    else:
-                        out[side][k] = v
+                    out[side][k] = v.clone() if torch.is_tensor(v) else v
             return out
 
-    def load_weights(self, weights):
-        """
-        Load weights into the CTGAN model.
-
-        Args:
-            weights (dict): Weights to load into the model.
-        """
+    def load_weights(self, weights: Dict[str, Dict[str, torch.Tensor]]) -> None:
+        """Load a state dict into CTGAN and refresh the CPU snapshot (atomic)."""
         if not weights or "generator" not in weights or "discriminator" not in weights:
             return
+
         with self._weights_lock:
             self._move_modules()
             G = self.model._generator
             D = self.model._discriminator
 
-            # Coerce dtypes/devices
             refG = G.state_dict()
             for k, v in list(weights["generator"].items()):
                 if torch.is_tensor(v) and k in refG and v.dtype != refG[k].dtype:
                     weights["generator"][k] = v.to(refG[k].dtype)
+
             refD = D.state_dict()
             for k, v in list(weights["discriminator"].items()):
                 if torch.is_tensor(v) and k in refD and v.dtype != refD[k].dtype:
@@ -142,19 +147,28 @@ class CTGANModel:
 
             G.load_state_dict(weights["generator"], strict=True)
             D.load_state_dict(weights["discriminator"], strict=True)
-            # Update snapshot (still inside lock to keep atomic view)
+
             self._cpu_weights = self._snapshot_cpu()
 
-    def encode(self):
-        """Return a JSON-serializable package containing the weights."""
+    def encode(self) -> Optional[Dict[str, Any]]:
+        """
+        Return a JSON-serializable package:
+        {
+          "generator": b64(gzip(torch.save(state_dict))),
+          "discriminator": b64(gzip(torch.save(state_dict))),
+          "checksum": sha256(gen_blob + dis_blob),
+          "gen_bytes": int,
+          "dis_bytes": int
+        }
+        """
         with self._weights_lock:
             if self._cpu_weights is None:
                 return None
-            snap = self._cpu_weights  # immutable tensors (cloned earlier)
+            snap = self._cpu_weights
 
         def _pack(obj: dict) -> bytes:
             with io.BytesIO() as buf:
-                torch.save(obj, buf, _use_new_zipfile_serialization=not self._legacy_serialize)
+                torch.save(obj, buf)
                 raw = buf.getvalue()
             return gzip.compress(raw)
 
@@ -169,20 +183,20 @@ class CTGANModel:
             "dis_bytes": len(dis_comp),
         }
 
-    def decode(self, encoded):
-        """Decode the state_dict from a JSON-serializable package."""
+    def decode(self, encoded: Dict[str, Any]) -> Dict[str, Dict[str, torch.Tensor]]:
+        """Decode the state_dict package produced by `encode()`."""
         gen_comp = base64.b64decode(encoded["generator"])
         dis_comp = base64.b64decode(encoded["discriminator"])
         checksum = encoded["checksum"]
         if hashlib.sha256(gen_comp + dis_comp).hexdigest() != checksum:
             raise ValueError("Checksum mismatch.")
-        def _unpack(blob: bytes) -> dict:
+
+        def _unpack(blob: bytes) -> Dict[str, torch.Tensor]:
             try:
                 buf = io.BytesIO(gzip.decompress(blob))
                 obj = torch.load(buf, map_location="cpu")
             except Exception as e:
                 raise RuntimeError(f"decode failed: {e}")
-            # Normalize dtypes (float64 -> float32)
             for k, v in list(obj.items()):
                 if torch.is_tensor(v) and v.dtype == torch.float64:
                     obj[k] = v.float()
@@ -192,61 +206,7 @@ class CTGANModel:
         dis_sd = _unpack(dis_comp)
         return {"generator": gen_sd, "discriminator": dis_sd}
 
-    def decode_and_load(self, package: dict):
+    def decode_and_load(self, package: Dict[str, Any]) -> None:
+        """Convenience: decode a package and immediately load it."""
         decoded = self.decode(package)
         self.load_weights(decoded)
-
-def _is_float_tensor(t: torch.Tensor) -> bool:
-    return t.is_floating_point()
-
-@torch.no_grad()
-def state_dict_snapshot(module: torch.nn.Module, device: str = "cpu") -> dict[str, torch.Tensor]:
-    """
-    Frozen copy of float tensors (params + float buffers), on CPU.
-    """
-    snap = {}
-    for k, v in module.state_dict().items():
-        if isinstance(v, torch.Tensor) and _is_float_tensor(v):
-            snap[k] = v.detach().to(device).clone()
-    return snap
-
-@torch.no_grad()
-def l2_delta_between_snapshots(a: dict[str, torch.Tensor], b: dict[str, torch.Tensor]) -> float:
-    """
-    Efficient L2 norm of (b - a) without concatenating huge vectors.
-    Assumes same keys & shapes.
-    """
-    s = 0.0
-    for k, va in a.items():
-        vb = b[k]
-        diff = vb - va
-        s += float((diff * diff).sum().item())
-    return math.sqrt(s)
-
-@torch.no_grad()
-def l2_norm_snapshot(a: dict[str, torch.Tensor]) -> float:
-    s = 0.0
-    for v in a.values():
-        s += float((v * v).sum().item())
-    return math.sqrt(s)
-
-
-@torch.no_grad()
-def gan_snapshot(generator: torch.nn.Module, discriminator: torch.nn.Module, device="cpu"):
-    g = state_dict_snapshot(generator, device)
-    d = state_dict_snapshot(discriminator, device)
-    return {("G", k): v for k, v in g.items()} | {("D", k): v for k, v in d.items()}
-
-@torch.no_grad()
-def get_gan_snapshot(ctgan_model: CTGANModel, device: str= "cpu"):
-    """Return snapshot dict or None if G/D aren't ready yet."""
-    try:
-        G = getattr(ctgan_model, "_generator", None)
-        D = getattr(ctgan_model, "_discriminator", None)
-        if G is None or D is None:
-            return None
-        g = state_dict_snapshot(G, device)
-        d = state_dict_snapshot(D, device)
-        return {("G", k): v for k, v in g.items()} | {("D", k): v for k, v in d.items()}
-    except Exception:
-        return None

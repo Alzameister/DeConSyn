@@ -529,8 +529,6 @@ class CTGAN(BaseSynthesizer):
                     description.format(gen=generator_loss, dis=discriminator_loss)
                 )
 
-        gen_state_dict = self._generator.state_dict()
-
     @random_state
     def sample(self, n, condition_column=None, condition_value=None):
         """Sample data similar to the training data.

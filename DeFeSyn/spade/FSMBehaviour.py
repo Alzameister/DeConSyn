@@ -117,7 +117,6 @@ class NodeFSMBehaviour(FSMBehaviour):
         self.agent.log.info("FSM finished at state {}", self.current_state)
         self.agent.fsm_done.set()
 
-
 # ----------------------------
 # Base State
 # ----------------------------
@@ -465,7 +464,6 @@ class PullState(BaseState):
         self.report("PULL after Consume")
         clear_memory()
         self.set_next_state(PUSH_STATE)
-
 
 # ----------------------------
 # Push

@@ -1,6 +1,4 @@
 import asyncio
-import json
-import uuid
 from dataclasses import dataclass
 from pathlib import Path
 
@@ -8,7 +6,6 @@ import pandas as pd
 import torch
 from spade.agent import Agent
 from spade.template import Template
-from spade.message import Message
 from loguru import logger
 
 from DeFeSyn.consensus.Consensus import Consensus
@@ -130,19 +127,25 @@ class NodeAgent(Agent):
         self.log.info("NodeAgent setup complete.")
 
     async def _setup_fsm(self):
-        fsm = NodeFSMBehaviour()
-        fsm.add_state(name=START_STATE, state=StartState(), initial=True)
-        fsm.add_state(name=TRAINING_STATE, state=TrainingState())
-        fsm.add_state(name=PULL_STATE, state=PullState())
-        fsm.add_state(name=PUSH_STATE, state=PushState())
-        fsm.add_state(name=FINAL_STATE, state=FinalState())
+        # Declare states once, in a single, readable structure
+        states = {
+            START_STATE: StartState(),
+            TRAINING_STATE: TrainingState(),
+            PULL_STATE: PullState(),
+            PUSH_STATE: PushState(),
+            FINAL_STATE: FinalState(),
+        }
 
-        fsm.add_transition(source=START_STATE, dest=TRAINING_STATE)
-        fsm.add_transition(source=TRAINING_STATE, dest=PULL_STATE)
-        fsm.add_transition(source=TRAINING_STATE, dest=PUSH_STATE)
-        fsm.add_transition(source=PULL_STATE, dest=PUSH_STATE)
-        fsm.add_transition(source=PUSH_STATE, dest=TRAINING_STATE)
-        fsm.add_transition(source=TRAINING_STATE, dest=FINAL_STATE)
+        # Declare all allowed transitions compactly
+        transitions = [
+            (START_STATE, TRAINING_STATE),
+            (TRAINING_STATE, PULL_STATE),
+            (TRAINING_STATE, PUSH_STATE),
+            (PULL_STATE, PUSH_STATE),
+            (PUSH_STATE, TRAINING_STATE),
+            (TRAINING_STATE, FINAL_STATE),
+        ]
 
+        fsm = NodeFSMBehaviour(states=states, transitions=transitions, initial=START_STATE)
         self.add_behaviour(fsm)
 

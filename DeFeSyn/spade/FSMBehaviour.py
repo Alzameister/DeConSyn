@@ -85,17 +85,33 @@ class TrainSnapshot:
 
 class NodeFSMBehaviour(FSMBehaviour):
     """
-        NodeFSMBehaviour is a finite state machine (FSM) behavior for a NodeAgent in the DeFeSyn framework.
-        It manages the states of the agent during the synthetic data generation model training process.
-        It includes states for TRAIN, PULL, PUSH
-        """
+    Generic FSMBehaviour that is configured declaratively via:
+      - states: dict[name -> State()]
+      - transitions: list[(source, dest)]
+      - initial: name of the initial state
+    Keeps on_start/on_end hooks for logging and completion signaling.
+    """
+    def __init__(self, *, states: dict[str, State], transitions: list[tuple[str, str]], initial: str):
+        super().__init__()
+        if initial not in states:
+            raise ValueError(f"Initial state '{initial}' not found in states: {list(states)}")
+
+        # Register states
+        for name, state in states.items():
+            self.add_state(name=name, state=state, initial=(name == initial))
+
+        # Register transitions
+        for source, dest in transitions:
+            if source not in states or dest not in states:
+                raise ValueError(f"Transition {source} -> {dest} references unknown state.")
+            self.add_transition(source=source, dest=dest)
+
     async def on_start(self):
         self.agent.log.info("FSM starting at initial state {}", self.current_state)
 
     async def on_end(self):
         self.agent.log.info("FSM finished at state {}", self.current_state)
         self.agent.fsm_done.set()
-        # await self.agent.stop()
 
 class BaseState(State, ABC):
     @property

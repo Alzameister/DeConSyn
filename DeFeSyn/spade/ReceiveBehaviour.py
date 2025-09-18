@@ -1,150 +1,149 @@
 import json
 import time
 import uuid
+from asyncio import to_thread
 from collections import OrderedDict
+from typing import Optional
 
 from spade.behaviour import CyclicBehaviour
 from spade.message import Message
 
 class ReceiveBehaviour(CyclicBehaviour):
-    def __init__(self, dedupe_max=2048):
-        super().__init__()
+    """
+    Handles inbound gossip messages:
+      - Enqueues valid 'inform' + 'gossip' to agent.queue.
+      - Replies with 'gossip-reply' when local weights are encodable;
+        otherwise defers by pushing the original msg to agent.pending_gossip_replies.
+    """
 
     async def run(self):
         msg = await self.receive(timeout=0.1)
-        if msg:
-            # --- parse metadata safely (do not mutate msg) ---
-            msg_id = msg.get_metadata("msg_id") or f"in-{uuid.uuid4().hex[:6]}"
-            mtype = (msg.get_metadata("type") or "").strip()
-            performative = (msg.get_metadata("performative") or "").strip()
-            sender = str(msg.sender)
+        if not msg:
+            return
 
-            # Only handle 'inform'+'gossip'. Other types are ignored.
-            if performative == "inform" and mtype == "gossip":
-                version_raw = msg.get_metadata("version")
-                try:
-                    msg_version = int(version_raw) if version_raw is not None else -1
-                except Exception:
-                    msg_version = -1
+        msg_id = msg.get_metadata("msg_id") or f"in-{uuid.uuid4().hex[:6]}"
+        mtype = (msg.get_metadata("type") or "").strip()
+        perf = (msg.get_metadata("performative") or "").strip()
+        sender = str(msg.sender)
 
-                # Log the receipt (we do NOT enqueue)
-                self.agent.log.info(
-                    "RECEIVE: gossip from {} (id={}, ver={})",
-                    sender, msg_id, msg_version
-                )
-                await self.agent.queue.put(msg)
-                self._emit_receive_event(sender, msg_id, msg_version, q_after=int(self.agent.queue.qsize()))
+        if not (perf == "inform" and mtype == "gossip"):
+            return
 
-                # --- prepare reply ('gossip-reply') ---
-                pkg = None
-                try:
-                    # load latest local weights onto the model and encode
-                    #self.agent.model.load_weights(self.agent.weights)
-                    t0 = time.perf_counter()
-                    pkg = self.agent.model.encode()
-                    enc_ms = (time.perf_counter() - t0) * 1000.0
-                except Exception as e:
-                    self.agent.log.warning("RESPOND: encode failed: {}", e)
+        version_raw = msg.get_metadata("version")
+        try:
+            msg_version = int(version_raw) if version_raw is not None else -1
+        except Exception:
+            msg_version = -1
 
-                if pkg:
-                    # eps_i to share; tolerate consensus not ready yet
-                    try:
-                        eps_i = float(self.agent.consensus.get_eps())
-                    except Exception:
-                        eps_i = None
+        self.agent.log.info("RECEIVE: gossip from {} (id={}, ver={})", sender, msg_id, msg_version)
+        await self.agent.queue.put(msg)
+        self._receive_event(sender, msg_id, msg_version, q_after=int(self.agent.queue.qsize()))
 
-                    resp = Message(to=sender)
-                    resp.set_metadata("performative", "inform")
-                    resp.set_metadata("type", "gossip-reply")
-                    resp.set_metadata("content-type", "application/octet-stream+b64")
-                    resp_id = f"resp-{msg_id}"
-                    resp.set_metadata("msg_id", resp_id)
-                    version_sent = str(getattr(self.agent, "last_committed_version", self.agent.current_iteration))
-                    resp.set_metadata("version", version_sent)
-                    resp.set_metadata("in_reply_to", msg_id)
-                    if eps_i is not None:
-                        resp.set_metadata("eps", f"{eps_i:.12f}")
-                    pkg_json = json.dumps(pkg)
-                    resp.body = pkg_json
-                    bytes_out = len(pkg_json)
+        pkg = await self._try_encode_weights()
+        if pkg is None:
+            self.agent.log.warning(
+                "Delaying gossip-reply to {} (weights not ready). Will flush after training.",
+                sender
+            )
+            self.agent.pending_gossip_replies.append(msg)
+            return
 
-                    await self.send(resp)
+        eps_i = self._safe_eps()
+        version_sent = str(getattr(self.agent, "last_committed_version", self.agent.current_iteration))
+        await self._send_gossip_reply(sender, in_msg_id=msg_id, ver=version_sent, pkg=pkg, eps_i=eps_i)
 
-                    self.agent.log.info(
-                        "RESPOND_SEND: to {} (id={}, ver_sent={}, eps_i={}, bytes={})",
-                        sender, resp_id, version_sent,
-                        f"{eps_i:.6f}" if eps_i is not None else "n/a",
-                        bytes_out
-                    )
+    # ---------- helpers ----------
 
-                    self.agent.event.bind(
-                        event="RESPOND_SEND",
-                        local_step=self.agent.current_iteration,
-                        neighbor_id=sender,
-                        out_msg_id=resp_id,
-                        bytes=int(bytes_out),
-                        eps_self=(float(eps_i) if eps_i is not None else None)
-                    ).info("send")
-                else:
-                    self.agent.log.warning(
-                        "Delaying gossip-reply to {} (weights not ready). Will flush after training.",
-                        msg.sender
-                    )
-                    self.agent.pending_gossip_replies.append(msg)
+    async def _try_encode_weights(self) -> Optional[dict]:
+        try:
+            t0 = time.perf_counter()
+            pkg = self.agent.model.encode()
+            _ = (time.perf_counter() - t0) * 1000.0
+            return pkg if pkg else None
+        except Exception as e:
+            self.agent.log.warning("RESPOND: encode failed: {}", e)
+            return None
 
-    def _emit_receive_event(self, sender, msg_id, msg_version, q_after, dropped: bool = False):
+    def _safe_eps(self) -> Optional[float]:
+        try:
+            return float(self.agent.consensus.get_eps())
+        except Exception:
+            return None
+
+    async def _send_gossip_reply(self, to_jid: str, *, in_msg_id: str, ver: str, pkg: dict, eps_i: Optional[float]):
+        resp = Message(to=str(to_jid))
+        resp_id = f"resp-{in_msg_id}"
+        resp.set_metadata("performative", "inform")
+        resp.set_metadata("type", "gossip-reply")
+        resp.set_metadata("content-type", "application/octet-stream+b64")
+        resp.set_metadata("msg_id", resp_id)
+        resp.set_metadata("version", ver)
+        resp.set_metadata("in_reply_to", in_msg_id)
+        if eps_i is not None:
+            resp.set_metadata("eps", f"{eps_i:.12f}")
+
+        pkg_json = await to_thread(json.dumps, pkg)
+        resp.body = pkg_json
+
+        await self.send(resp)
+
+        bytes_out = len(pkg_json)
+        self.agent.log.info(
+            "RESPOND_SEND: to {} (id={}, ver_sent={}, eps_i={}, bytes={})",
+            to_jid, resp_id, ver, f"{eps_i:.6f}" if eps_i is not None else "n/a", bytes_out
+        )
+        self.agent.event.bind(
+            event="RESPOND_SEND",
+            local_step=self.agent.current_iteration,
+            neighbor_id=to_jid,
+            out_msg_id=resp_id,
+            bytes=int(bytes_out),
+            eps_self=(float(eps_i) if eps_i is not None else None),
+        ).info("send")
+
+    def _receive_event(self, sender, msg_id, msg_version, q_after, dropped: bool = False):
+        try:
+            v = int(msg_version)
+        except Exception:
+            v = -1
         self.agent.event.bind(
             event="RECEIVE",
             local_step=self.agent.current_iteration,
-            neighbor_id=sender,
-            msg_id=msg_id,
-            msg_version=int(msg_version) if isinstance(msg_version, int) else -1,
+            neighbor_id=str(sender),
+            msg_id=str(msg_id),
+            msg_version=v,
             queue_len_after=int(q_after),
             dropped=bool(dropped),
         ).info("recv")
 
-    class _LRU:
-        """Tiny LRU set for deduping msg_ids."""
-
-        def __init__(self, maxlen=2048):
-            self._d = OrderedDict()
-            self._maxlen = int(maxlen)
-
-        def __contains__(self, k):
-            return k in self._d
-
-        def add(self, k):
-            if k in self._d:
-                self._d.move_to_end(k, last=True)
-                return
-            self._d[k] = None
-            self._d.move_to_end(k, last=True)
-            if len(self._d) > self._maxlen:
-                self._d.popitem(last=False)
 
 class BarrierHelloResponder(CyclicBehaviour):
+    """Responds to 'barrier-hello' with 'barrier-ack'."""
+
     async def run(self):
-        msg = await self.receive(timeout=0.1)  # template attached below
+        msg = await self.receive(timeout=0.1)
         if not msg:
             return
         token = msg.get_metadata("token") or ""
-        # reply ACK (echo token back)
         ack = msg.make_reply()
         ack.set_metadata("performative", "inform")
         ack.set_metadata("type", "barrier-ack")
         ack.set_metadata("token", token)
         await self.send(ack)
-        self.agent.log.debug(f"HELLO from {msg.sender} → ACK(token={token})")
+        self.agent.log.debug("HELLO from {} → ACK(token={})", msg.sender, token)
+
 
 class BarrierAckRouter(CyclicBehaviour):
+    """Routes 'barrier-ack' messages to the queue registered for their token."""
+
     async def run(self):
-        msg = await self.receive(timeout=0.1)  # template filters by type=barrier-ack
+        msg = await self.receive(timeout=0.1)
         if not msg:
             return
         token = msg.get_metadata("token") or ""
         q = self.agent.barrier_queues.get(token)
         if q:
             await q.put(str(msg.sender))
-            self.agent.log.debug(f"ACK routed token={token} from={msg.sender}")
+            self.agent.log.debug("ACK routed token={} from={}", token, msg.sender)
         else:
-            self.agent.log.debug(f"ACK for unknown token={token} from={msg.sender}")
+            self.agent.log.debug("ACK for unknown token={} from={}", token, msg.sender)

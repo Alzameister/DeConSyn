@@ -166,8 +166,9 @@ class BaseState(State, ABC):
         rss_mb = psutil.Process().memory_info().rss / 1024 ** 2
         gpu_mb = torch.cuda.memory_allocated() / 1024 ** 2 if torch.cuda.is_available() else 0
         behaviours = getattr(self.agent, "behaviours", None)
+        num_behaviours = len(behaviours) if behaviours is not None else 0
         self.log.info("{} STATE MEM: rss={:.1f}MB gpu={:.1f}MB behaviours={}",
-                      label, rss_mb, gpu_mb, len(behaviours) if behaviours else 0)
+                      label, rss_mb, gpu_mb, num_behaviours)
 
     # ---- Persistence helpers ----
     def _persist_weights(self, it: int):

@@ -599,6 +599,11 @@ class PushState(BaseState):
 
         self.log.info("Received weights from {}", peer)
         try:
+            payload = reply.body
+            if payload is None:
+                self.log.error("PUSH: missing payload from %s (rid=%s)", peer, rid)
+                # decide: retry, pick another neighbor, or skip consensus this round
+                return
             received = self._decode_weights(reply.body)
         finally:
             reply.body = None

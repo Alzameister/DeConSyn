@@ -387,12 +387,14 @@ class TrainingState(BaseState):
 
         for msg in pending:
             try:
+                rid = msg.get_metadata("rid")
                 await self._send_gossip_weights(
                     peer=msg.sender,
                     it=self.agent.current_iteration,
                     blob=pkg,
-                    rid=msg.get_metadata("rid") or msg.get_metadata("msg_id") or f"rid-{uuid.uuid4().hex[:8]}"
+                    rid=rid
                 )
+                self.agent.log.info("Sent deferred gossip-reply to {}, rid={}", msg.sender, rid)
                 self.ev("WEIGHTS", "deferred-reply", neighbor=str(msg.sender),
                         rid=msg.get_metadata("rid"), ver=int(msg.get_metadata("version") or -1))
             except Exception as e:

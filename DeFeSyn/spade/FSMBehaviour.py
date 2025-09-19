@@ -139,9 +139,12 @@ class BaseState(State, ABC):
             self.agent.log.debug("ev() failed for event='{}': {}", event, e)
 
     def _active_neighbors(self) -> set[str]:
-        active = getattr(self.agent, "active_neighbors", set())
-        self.agent.log.info("Active neighbors: {}", active)
-        return set(active)
+        active = getattr(self.agent, "active_neighbors", None)
+        if isinstance(active, set):
+            self.agent.log.info("Active neighbors: {}", active)
+            return active
+        contacts = self.agent.presence.get_contacts()
+        return {str(jid) for jid, c in contacts.items() if c.is_available()}
 
     # ---- Encoding helpers ----
     def _encode_weights(self) -> str:

@@ -1,5 +1,4 @@
 import asyncio
-import contextlib
 
 from spade.behaviour import CyclicBehaviour
 
@@ -43,17 +42,6 @@ class PresenceBehaviour(CyclicBehaviour):
 
         # initialize active set from current roster
         await self._recompute_from_roster(initial=True)
-
-    async def on_end(self):
-        a = self.agent
-        with contextlib.suppress(Exception):
-            a.presence.on_available = None
-            a.presence.on_unavailable = None
-            a.presence.on_subscribe = None
-            a.presence.on_subscribed = None
-            a.presence.on_unsubscribed = None
-        with contextlib.suppress(Exception):
-            a.presence.set_unavailable()
 
     async def run(self):
         await asyncio.sleep(self.poll_secs)
@@ -113,37 +101,25 @@ class PresenceBehaviour(CyclicBehaviour):
 
         # keep only declared neighbors
         neighbor_set = set(getattr(a, "neighbors", []))
-        new_active = active & neighbor_set
-        if new_active != getattr(self, "_last_active", set()) or initial:
-            self._last_active = set(new_active)
-            a.active_neighbors = new_active
+        active &= neighbor_set
+
+        # MERGE (do not drop previously active unless explicitly unavailable)
+        merged = set(a.active_neighbors) | active
+
+        if merged != getattr(self, "_last_active", set()) or initial:
+            self._last_active = set(merged)
+            a.active_neighbors = merged
+            # try:
+            #     a.consensus.set_degree(len(merged))
+            #     eps = float(a.consensus.get_eps())
+            # except Exception:
+            #     eps = None
             eps = a.consensus.get_eps()
             a.log.info(
                 "Presence: active_neighbors={} | degree={} | eps_i={}",
-                sorted(new_active), len(new_active),
+                sorted(merged), len(merged),
                 f"{eps:.6f}" if eps is not None else "n/a"
             )
-
-
-        # active &= neighbor_set
-        #
-        # # MERGE (do not drop previously active unless explicitly unavailable)
-        # merged = set(a.active_neighbors) | active
-        #
-        # if merged != getattr(self, "_last_active", set()) or initial:
-        #     self._last_active = set(merged)
-        #     a.active_neighbors = merged
-        #     # try:
-        #     #     a.consensus.set_degree(len(merged))
-        #     #     eps = float(a.consensus.get_eps())
-        #     # except Exception:
-        #     #     eps = None
-        #     eps = a.consensus.get_eps()
-        #     a.log.info(
-        #         "Presence: active_neighbors={} | degree={} | eps_i={}",
-        #         sorted(merged), len(merged),
-        #         f"{eps:.6f}" if eps is not None else "n/a"
-        #     )
 
     async def _report_active(self):
         a = self.agent

@@ -26,8 +26,8 @@ fi
 PROJECT_ROOT="/home/ubuntu/FeDeSyn"
 PYTHON_EXEC="$PROJECT_ROOT/.venv/bin/python"
 SCRIPT="$PROJECT_ROOT/DeFeSyn/spade/start.py"
-#
-#DATA_ROOT="$HOME/data/adult/"
+
+DATA_ROOT="$HOME/data/adult/"
 MANIFEST="manifest.yaml"
 SEED=42
 N_JOBS=1
@@ -61,33 +61,19 @@ run_once() {
 
   (
     cd "$PROJECT_ROOT"
-    if [[ "$topology" == "small-world" ]]; then
-      "$PYTHON_EXEC" -m DeFeSyn.spade.start run \
-        --agents "$agents" \
-        --epochs "$epochs" \
-        --iterations "$iterations" \
-        --alpha "$ALPHA" \
-        --data-root "$DATA_ROOT" \
-        --manifest "$MANIFEST" \
-        --topology "$topology" \
-        --k "$K" \
-        --p "$P" \
-        --seed "$SEED" \
-        --n-jobs "$N_JOBS" \
-        --log-level "$LOG_LEVEL"
-    else
-      "$PYTHON_EXEC" -m DeFeSyn.spade.start run \
-        --agents "$agents" \
-        --epochs "$epochs" \
-        --iterations "$iterations" \
-        --alpha "$ALPHA" \
-        --data-root "$DATA_ROOT" \
-        --manifest "$MANIFEST" \
-        --topology "$topology" \
-        --seed "$SEED" \
-        --n-jobs "$N_JOBS" \
-        --log-level "$LOG_LEVEL"
-    fi
+    "$PYTHON_EXEC" -m DeFeSyn.spade.start run \
+      --agents "$agents" \
+      --epochs "$epochs" \
+      --iterations "$iterations" \
+      --alpha "$ALPHA" \
+      --data-root "$DATA_ROOT" \
+      --manifest "$MANIFEST" \
+      --topology "$topology" \
+      --k "$K" \
+      --p "$P" \
+      --seed "$SEED" \
+      --n-jobs "$N_JOBS" \
+      --log-level "$LOG_LEVEL"
   )
 
   echo ">>> Finished: agents=$agents, epochs=$epochs, iterations=$iterations, topology=$topology"

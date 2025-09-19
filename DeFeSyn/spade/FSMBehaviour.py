@@ -544,11 +544,6 @@ class _WaitResponse(OneShotBehaviour):
             return
 
         while True:
-            if not self._peer_available():
-                self.agent.log.warning("WaitResponse: peer {} went unavailable → abort", self.peer_jid)
-                self.fut.set_result(None)
-                return
-
             remaining = deadline - loop.time()
             if remaining <= 0:
                 self.agent.log.warning("WaitResponse: timeout waiting for {}", self.peer_jid)

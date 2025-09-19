@@ -605,11 +605,29 @@ class PushState(BaseState):
 
         eps_j = self._msg_eps(reply, fallback=self.agent.consensus.get_eps())
         with torch.no_grad():
-            self.agent.weights = self.agent.consensus.step_with_neighbor(
+            new_w = self.agent.consensus.step_with_neighbor(
                 x_i=self.agent.weights, x_j=received, eps_j=eps_j
             )
             if self.agent.model:
                 self.agent.model.set_weights(self.agent.weights)
+
+        if new_w is not None:
+            self.agent.weights = new_w
+        else:
+            self.log.warning("PUSH: consensus step returned None → skipping weight update")
+
+        def _valid_weights(w) -> bool:
+            return (
+                    isinstance(w, dict)
+                    and isinstance(w.get("generator"), dict)
+                    and isinstance(w.get("discriminator"), dict)
+                    and all(v is not None for v in w["generator"].values())
+                    and all(v is not None for v in w["discriminator"].values())
+            )
+
+        if not _valid_weights(self.agent.weights):
+            self.log.warning(
+                "PUSH: consensus produced invalid weights → skipping persist and forcing cold start next round")
 
         self.log.info(
             "PUSH: consensus step applied (eps_i: {:.6f} → {:.6f}, used eps_j={:.6f})",

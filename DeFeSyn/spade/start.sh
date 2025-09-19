@@ -61,7 +61,7 @@ run_once() {
 
   (
     cd "$PROJECT_ROOT"
-    "$PYTHON_EXEC" -m DeFeSyn.spade.start run \
+    sudo chrt -r 10 "$PYTHON_EXEC" -m DeFeSyn.spade.start run \
       --agents "$agents" \
       --epochs "$epochs" \
       --iterations "$iterations" \

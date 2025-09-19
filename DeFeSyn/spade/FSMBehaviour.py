@@ -14,8 +14,6 @@ from spade.behaviour import FSMBehaviour, State, OneShotBehaviour
 from spade.message import Message
 from spade.template import Template
 
-from DeFeSyn.spade.PresenceBehaviour import PresenceBehaviour
-from DeFeSyn.spade.ReceiveBehaviour import ReceiveAckBehaviour
 from DeFeSyn.spade.ctgan_model import CTGANModel
 from DeFeSyn.utils.io import make_path, save_weights_pt, save_model_pickle
 
@@ -599,6 +597,7 @@ class PushState(BaseState):
             self.set_next_state(TRAINING_STATE)
             return
 
+        self.log.info("Received weights from {}", peer)
         try:
             received = self._decode_weights(reply.body)
         finally:

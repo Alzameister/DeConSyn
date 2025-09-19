@@ -235,7 +235,6 @@ class BaseState(State, ABC):
         await self.send(msg)
         self.ev("WEIGHTS", "send", neighbor=str(peer), msg_id=msg_id, ver=int(version),
                 bytes=int(_bytes_len(msg.body or b"")), rid=rid)
-        msg.body = None
         return msg_id, version
 
 # ----------------------------

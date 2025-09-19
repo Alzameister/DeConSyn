@@ -180,7 +180,7 @@ class BaseState(State, ABC):
         save_weights_pt(state_dict=self.agent.weights, path=p)
 
     def _persist_model(self, it: int):
-        should = (self.agent.current_iteration % 10 == 0) or (self.agent.current_iteration == self.agent.max_iterations)
+        should = (self.agent.current_iteration % 25 == 0) or (self.agent.current_iteration == self.agent.max_iterations)
         if not should:
             return
         p = make_path(

@@ -15,6 +15,7 @@ from spade.message import Message
 from spade.template import Template
 
 from DeFeSyn.spade.PresenceBehaviour import PresenceBehaviour
+from DeFeSyn.spade.ReceiveBehaviour import ReceiveAckBehaviour
 from DeFeSyn.spade.ctgan_model import CTGANModel
 from DeFeSyn.utils.io import make_path, save_weights_pt, save_model_pickle
 
@@ -417,8 +418,17 @@ class TrainingState(BaseState):
 # Pull
 # ----------------------------
 class PullState(BaseState):
+    def get_request_agents(self) -> list[str]:
+        """
+        Returns a list of neighbor keys where 'want_pull' == True in their value dict.
+        """
+        return [
+            k for k, v in self.agent.pending_gossip.items()
+            if isinstance(v, dict) and v.get("want_pull") is True
+        ]
+
     async def run(self):
-        neighbors = [str(n) for n, v in getattr(self.agent, "pending_gossip", {}).items() if v is not None]
+        neighbors = self.get_request_agents()
         if not neighbors:
             self.log.info("PULL: no pending pulls → transition PUSH")
             self.set_next_state(PUSH_STATE)
@@ -485,7 +495,7 @@ class PullState(BaseState):
             self.agent.pending_gossip.pop(neighbor, None)
 
         ms = (time.perf_counter() - t0) * 1000.0
-        dict_after = len([v for v in getattr(self.agent, "pending_gossip", {}).values() if v is not None])
+        dict_after = len(self.get_request_agents())
 
         self.log.info("PULL: averaged {} updates (dict size {}→{})", consumed, dict_before, dict_after)
         self.ev(

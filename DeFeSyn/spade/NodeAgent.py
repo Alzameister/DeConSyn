@@ -92,9 +92,7 @@ class NodeAgent(Agent):
 
         # queues for gossip + barrier tokens
         # Dictionary of neighbor JID and request SPADE message
-        self.pending_gossip: dict = {
-            str(n): None for n in self.neighbors
-        }
+        self.pending_gossip: dict = {str(n): {} for n in self.neighbors}
         self.queue: asyncio.Queue = asyncio.Queue()
         self.push_queue: asyncio.Queue = asyncio.Queue()
         self.barrier_queues: dict[str, asyncio.Queue[str]] = {}

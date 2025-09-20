@@ -53,38 +53,38 @@ class ReceiveAckBehaviour(CyclicBehaviour):
             msg_version = -1
 
         if kind == "push":
-            self.agent.pending_gossip[sender] = {"want_pull": True, "seen_at": self.agent.current_iteration}
+            self.agent.pending_gossip[sender] = {"want_pull": True, "seen_at": self.agent.current_iteration, "rid": rid}
         else:
             pass
 
-        blob = await self._try_encode_weights()
-        if not blob:
-            self.agent.log.warning(
-                "Delaying gossip-reply to {} (weights not ready). Will flush after training.",
-                sender
-            )
-            self.agent.pending_gossip_replies.append(msg)
-            return
-
-        resp = Message(to=sender)
-        resp.set_metadata("performative", "inform")
-        resp.set_metadata("type", "gossip-weights")
-        resp.set_metadata("content-type", "application/x-ctgan-weights")
-        resp.set_metadata("content-encoding", "b85+zlib")
-        resp.set_metadata("msg_id", f"resp-{rid}")
-        resp.set_metadata("rid", rid)
-        resp.set_metadata("version", str(self.agent.current_iteration))
-        with contextlib.suppress(Exception):
-            resp.set_metadata("eps", f"{float(self.agent.consensus.get_eps()):.12f}")
-        resp.body = blob
-        await self.send(resp)
-        bytes_out = len(blob)
+        # blob = await self._try_encode_weights()
+        # if not blob:
+        #     self.agent.log.warning(
+        #         "Delaying gossip-reply to {} (weights not ready). Will flush after training.",
+        #         sender
+        #     )
+        #     self.agent.pending_gossip_replies.append(msg)
+        #     return
+        #
+        # resp = Message(to=sender)
+        # resp.set_metadata("performative", "inform")
+        # resp.set_metadata("type", "gossip-weights")
+        # resp.set_metadata("content-type", "application/x-ctgan-weights")
+        # resp.set_metadata("content-encoding", "b85+zlib")
+        # resp.set_metadata("msg_id", f"resp-{rid}")
+        # resp.set_metadata("rid", rid)
+        # resp.set_metadata("version", str(self.agent.current_iteration))
+        # with contextlib.suppress(Exception):
+        #     resp.set_metadata("eps", f"{float(self.agent.consensus.get_eps()):.12f}")
+        # resp.body = blob
+        # await self.send(resp)
+        # bytes_out = len(blob) if blob else 0
 
         self.agent.log.info("RECEIVE: gossip-req from {}, kind={} (id={}, ver={}, rid={})", sender, kind, msg_id, msg_version, rid)
-        self.agent.log.info("REQUEST_RESPOND: to {} (id={}, rid={}, ver_sent={}, bytes={}, eps={})",
-                            sender, f"resp-{rid}", rid, self.agent.current_iteration,
-                            bytes_out,
-                            f"{float(self.agent.consensus.get_eps()):.6f}" if self.agent.consensus else "n/a")
+        # self.agent.log.info("REQUEST_RESPOND: to {} (id={}, rid={}, ver_sent={}, bytes={}, eps={})",
+        #                     sender, f"resp-{rid}", rid, self.agent.current_iteration,
+        #                     bytes_out,
+        #                     f"{float(self.agent.consensus.get_eps()):.6f}" if self.agent.consensus else "n/a")
         self.agent.event.bind(
             event="RECEIVE",
             local_step=self.agent.current_iteration,

@@ -237,6 +237,16 @@ class BaseState(State, ABC):
                 bytes=int(_bytes_len(msg.body or b"")), rid=rid)
         return msg_id, version
 
+    async def _try_encode_weights(self) -> Optional[dict]:
+        try:
+            t0 = time.perf_counter()
+            pkg = self.agent.model.encode()
+            _ = (time.perf_counter() - t0) * 1000.0
+            return pkg if pkg else None
+        except Exception as e:
+            self.agent.log.warning("RESPOND: encode failed: {}", e)
+            return None
+
 # ----------------------------
 # Start
 # ----------------------------
@@ -442,10 +452,32 @@ class PullState(BaseState):
         dict_before = len(neighbors)
         t0 = time.perf_counter()
 
+        # Encode weights once for all requests
+        blob = await self._try_encode_weights()
+        if not blob:
+            self.log.warning("PULL: cannot encode weights; skipping all pulls this round")
+            for n in neighbors:
+                self.agent.pending_gossip.pop(n, None)
+            self.set_next_state(PUSH_STATE)
+            return
+
 
         for neighbor in neighbors:
-            rid, _ = await self._send_gossip_request(neighbor, self.agent.current_iteration, kind="pull")
+            rid = self.agent.pending_gossip.get(neighbor, {}).get("rid")
+            if not rid:
+                self.log.warning("PULL: missing rid for neighbor {}; skipping", neighbor)
+                self.agent.pending_gossip.pop(neighbor, None)
+                continue
 
+            # Send weights
+            await self._send_gossip_weights(
+                peer=neighbor,
+                it=self.agent.current_iteration,
+                blob=blob,
+                rid=rid
+            )
+
+            # Wait for reply
             fut = asyncio.get_running_loop().create_future()
             waiter = _WaitResponse(fut, neighbor, timeout=180.0)
             self.agent.add_behaviour(
@@ -593,12 +625,24 @@ class PushState(BaseState):
 
         self.log.info("Received weights from {}", peer)
         try:
+            # Send own weights back to peer
+            blob = await self._try_encode_weights()
+            if blob:
+                await self._send_gossip_weights(
+                    peer=peer,
+                    it=self.agent.current_iteration,
+                    blob=blob,
+                    rid=rid
+                )
+
             payload = reply.body
             if payload is None:
                 self.log.error("PUSH: missing payload from %s (rid=%s)", peer, rid)
                 # decide: retry, pick another neighbor, or skip consensus this round
                 return
             received = self._decode_weights(reply.body)
+        except Exception as e:
+            self.log.error("PUSH: decode failed from {} (rid={}): {}", peer, rid, e)
         finally:
             reply.body = None
 
@@ -607,11 +651,11 @@ class PushState(BaseState):
             new_w = self.agent.consensus.step_with_neighbor(
                 x_i=self.agent.weights, x_j=received, eps_j=eps_j
             )
-            if self.agent.model:
-                self.agent.model.set_weights(self.agent.weights)
 
         if new_w is not None:
             self.agent.weights = new_w
+            if self.agent.model:
+                self.agent.model.set_weights(self.agent.weights)
         else:
             self.log.warning("PUSH: consensus step returned None → skipping weight update")
 

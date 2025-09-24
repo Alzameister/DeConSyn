@@ -13,7 +13,6 @@ import pandas as pd
 import seaborn as sns
 
 from DeFeSyn.data.DataLoader import DatasetLoader
-from DeFeSyn.spade.start import ADULT_MANIFEST, ADULT_PATH
 from DeFeSyn.utils.io import load_model_pickle
 from FEST.privacy_utility_framework.build.lib.privacy_utility_framework.metrics.privacy_metrics.privacy_metric_manager import \
     PrivacyMetricManager
@@ -79,7 +78,7 @@ class SynEvaluator:
         self.results = pd.DataFrame(columns=[
             "DCR", "NNDR", "AdversarialAccuracy", "SinglingOut", "Inference", "Linkability", "Disclosure",
             "RepU", "DiSCO",
-            "Mean", "Median", "Variance", "JS", "KS", "WASSERSTEIN"
+            "Mean", "Median", "Variance", "JS", "KS", "WASSERSTEIN",
             "CorrelationPearson", "CorrelationSpearman", "PCA",
             "Consensus"
         ], index=[self.synthetic_name])
@@ -216,7 +215,7 @@ class SynEvaluator:
             elif name == "WASSERSTEIN":
                 wasserstein = WassersteinCalculator(original=full_train, synthetic=synthetic,
                                                     original_name=self.original_name, synthetic_name=self.synthetic_name)
-                r = wasserstein.evaluate(metric=WassersteinMethod.WASSERSTEIN_SAMPLE, n_iterations=10)
+                r = wasserstein.evaluate(metric=WassersteinMethod.SINKHORN, n_iterations=5, n_samples=500)
                 utility_res[name] = r
                 self.results.at[self.synthetic_name, "WASSERSTEIN"] = r
                 self._save_txt(name, r, self.similarity_dir)
@@ -697,7 +696,7 @@ def cli(argv: List[str] = None) -> int:
     # Required-ish (with sensible defaults)
     parser.add_argument("--manifest-path", required=True,
                         help="Path to dataset manifest (e.g., ADULT_MANIFEST).")
-    parser.add_argument("--model-path", required=True,
+    parser.add_argument("--model-name", required=True,
                         help="Path to pickled generative model (.pkl).")
     parser.add_argument("--output-dir", required=True,
                         help="Directory to write results/artifacts.")
@@ -708,6 +707,7 @@ def cli(argv: List[str] = None) -> int:
 
     parser.add_argument("--compare-runs", action="store_true",
                         help="Compare multiple runs inside --runs-dir and plot per-metric comparisons.")
+    parser.add_argument("--baseline", action="store_true")
     parser.add_argument("--runs-dir", default=None,
                         help="Parent directory that contains multiple run subfolders to compare.")
 
@@ -722,7 +722,7 @@ def cli(argv: List[str] = None) -> int:
         "--metrics",
         type=_csv_list,
         default=["DCR", "NNDR", "AdversarialAccuracy", "SinglingOut", "Inference",
-                 "Linkability", "Disclosure", "BasicStats", "JS", "KS",
+                 "Linkability", "Disclosure", "BasicStats", "JS", "KS", "WASSERSTEIN",
                  "CorrelationPearson", "CorrelationSpearman", "PCA", "PCA3D", "Consensus"],
         help=("Comma-separated metric names to run. Supported: "
               "DCR, NNDR, AdversarialAccuracy, SinglingOut, Inference, Linkability, Disclosure, "
@@ -795,7 +795,7 @@ def cli(argv: List[str] = None) -> int:
 
     evaluator = SynEvaluator(
         manifest_path=args.manifest_path,
-        model_path=args.model_path,
+        model_path=args.run_dir + "/agent_00/" + args.model_name,
         output_dir=args.output_dir,
         original_name=args.original_name,
         synthetic_name=args.synthetic_name,
@@ -844,9 +844,66 @@ def cli(argv: List[str] = None) -> int:
         return 0
 
     # === Default: single-model evaluation ===
-    results = evaluator.evaluate()
-    print("\n========= SUMMARY =========")
-    print(results)
+    if args.baseline:
+        evaluator = SynEvaluator(
+            manifest_path=args.manifest_path,
+            model_path=args.run_dir + "/" + args.model_name,
+            output_dir=args.output_dir,
+            original_name=args.original_name,
+            synthetic_name=args.synthetic_name,
+            metrics=orig_metrics if args.metrics else None,
+            keys=args.keys if args.keys else None,
+            target=args.target,
+            inf_aux_cols=args.inf_aux_cols if args.inf_aux_cols else None,
+            secret=args.secret,
+            regression=bool(args.regression),
+            link_aux_cols=link_aux_cols,
+            control_frac=args.control_frac,
+            run_dir=args.run_dir
+        )
+        artifacts = evaluator.evaluate()
+        print("\n========= BASELINE EVALUATION DONE =========")
+
+    # Loop over agent dirs in run dir, find model-name
+    run_dir = Path(args.run_dir)
+    agent_dirs = sorted([p for p in run_dir.glob("agent_*") if p.is_dir()])
+
+    if not agent_dirs:
+        print("ERROR: No agents found in run-dir", file=sys.stderr)
+        return 2
+
+    for agent_dir in agent_dirs:
+        model_path = agent_dir / args.model_name
+        if not model_path.exists():
+            print(f"ERROR: Model {model_path} not found in agent dir {agent_dir}.", file=sys.stderr)
+            return 2
+
+        print(f"Evaluating agent dir: {agent_dir} with model: {model_path}")
+        out_dir = agent_dir / "results"
+        out_dir.mkdir(parents=True, exist_ok=True)
+
+        evaluator = SynEvaluator(
+            manifest_path=args.manifest_path,
+            model_path=str(model_path),
+            output_dir=str(out_dir),
+            original_name=args.original_name,
+            synthetic_name=args.synthetic_name,
+            metrics=orig_metrics if args.metrics else None,
+            keys=args.keys if args.keys else None,
+            target=args.target,
+            inf_aux_cols=args.inf_aux_cols if args.inf_aux_cols else None,
+            secret=args.secret,
+            regression=bool(args.regression),
+            link_aux_cols=link_aux_cols,
+            control_frac=args.control_frac,
+            run_dir=args.run_dir
+        )
+        evaluator.seed = args.seed
+
+
+        results = evaluator.evaluate()
+        print("\n========= SUMMARY =========\n")
+        print(results)
     return 0
 
 if __name__ == "__main__":

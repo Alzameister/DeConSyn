@@ -14,7 +14,7 @@ from spade.behaviour import FSMBehaviour, State, OneShotBehaviour
 from spade.message import Message
 from spade.template import Template
 
-from DeFeSyn.spade.ctgan_model import CTGANModel
+from DeFeSyn.models.models import CTGANModel, Model
 from DeFeSyn.utils.io import make_path, save_weights_pt, save_model_pickle
 
 # ----------------------------
@@ -345,7 +345,7 @@ class TrainingState(BaseState):
         dcols = discrete_cols_of(part_train)
         self.agent.log.info("TRAIN: init CTGAN (epochs={}, device={}, discrete={})",
                             self._epochs, self.agent.device, dcols)
-        self.agent.model = CTGANModel(
+        self.agent.model: Model = CTGANModel(
             full_data=full_train,
             data=part_train,
             discrete_columns=dcols,

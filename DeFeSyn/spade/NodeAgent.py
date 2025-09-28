@@ -10,6 +10,7 @@ from spade.template import Template
 from loguru import logger
 
 from DeFeSyn.consensus.Consensus import Consensus
+from DeFeSyn.models.models import Model
 from DeFeSyn.spade.FSMBehaviour import NodeFSMBehaviour, TRAINING_STATE, StartState, TrainingState, \
     PullState, PushState, FinalState
 from DeFeSyn.spade.ReceiveBehaviour import BarrierHelloResponder, BarrierAckRouter, \
@@ -100,7 +101,7 @@ class NodeAgent(Agent):
         self.fsm_done: asyncio.Event = asyncio.Event()
 
         # model + state (filled by FSM on first TRAIN)
-        self.model = None  # CTGANModel instance after first TRAIN
+        self.model: Model = None  # CTGANModel instance after first TRAIN
         self.weights: dict = {}  # latest local weights
         self.loss_values = pd.DataFrame(columns=["Epoch", "Generator Loss", "Discriminator Loss"])
 

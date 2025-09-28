@@ -369,8 +369,8 @@ class TrainingState(BaseState):
         return TrainSnapshot(ms=(time.perf_counter() - t0) * 1000.0)
 
     def _capture_losses_and_weights(self):
-        self.agent.loss_values = self.agent.model.model.loss_values
-        self.agent.model.model.loss_values = None
+        self.agent.loss_values = self.agent.model.get_loss_values()
+        self.agent.model.clear_loss_values()
         self.agent.weights = self.agent.model.get_weights()
 
     async def _flush_pending_gossip_replies(self):

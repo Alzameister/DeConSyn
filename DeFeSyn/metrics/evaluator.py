@@ -863,6 +863,7 @@ def cli(argv: List[str] = None) -> int:
         )
         artifacts = evaluator.evaluate()
         print("\n========= BASELINE EVALUATION DONE =========")
+        return 0
 
     # Loop over agent dirs in run dir, find model-name
     run_dir = Path(args.run_dir)
@@ -899,6 +900,7 @@ def cli(argv: List[str] = None) -> int:
             run_dir=args.run_dir
         )
         evaluator.seed = args.seed
+
 
 
         results = evaluator.evaluate()

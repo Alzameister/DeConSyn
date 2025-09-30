@@ -1,3 +1,4 @@
+import itertools
 from copy import deepcopy
 
 import numpy as np
@@ -12,13 +13,14 @@ class Trainer:
         for param in self.ema_model.parameters():
             param.detach_()
 
-        self.train_iter = train_iter
+        # TODO: Check with supervisors for batchsize --> Took default config for their best ddpm for adult
+        self.train_iter = itertools.cycle(train_iter)
         self.steps = steps
         self.init_lr = lr
         self.optimizer = torch.optim.AdamW(self.diffusion.parameters(), lr=lr, weight_decay=weight_decay)
         self.device = device
         self.loss_history = pd.DataFrame(columns=['step', 'mloss', 'gloss', 'loss'])
-        self.log_every = 100
+        self.log_every = 1
         self.print_every = 500
         self.ema_every = 1000
 

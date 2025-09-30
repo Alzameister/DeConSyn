@@ -75,6 +75,7 @@ async def run(
     log_level: str = "INFO",
     k: int = 4,
     p: float = 0.1,
+    model_type: str = "tabddpm"
 ):
     # logging + seed
     run_id = init_logging(level=log_level.upper(),
@@ -130,6 +131,7 @@ async def run(
                 max_iterations=max_iterations,
                 alpha=alpha,
                 run_id=run_id,
+                model_type=model_type
             )
             data = partition_for(i)
             a = NodeAgent(cfg=cfg, data=data, neighbors=neighbors_map[cfg.jid])
@@ -178,6 +180,7 @@ async def cli_async(args: argparse.Namespace) -> int:
             seed=args.seed,
             n_jobs=args.n_jobs,
             log_level=args.log_level,
+            model_type=args.model_type
         )
         return 0
 
@@ -225,6 +228,7 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--seed", type=int, default=SEED, help=f"Global seed (default: {SEED})")
         sp.add_argument("--n-jobs", type=int, default=1, help="joblib parallel workers (default: 1)")
         sp.add_argument("--log-level", default="INFO", choices=["DEBUG","INFO","WARNING","ERROR"], help="Logging level")
+        sp.add_argument("--model-type", default="tabddpm", choices=["tabddpm", "ctgan"], help="Model type to use (default: tabddpm)")
 
     # run
     sp_run = sub.add_parser("run", help="Run a single experiment")

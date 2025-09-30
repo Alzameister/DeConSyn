@@ -1,7 +1,3 @@
-import base64
-import gzip
-import hashlib
-import io
 import threading
 from abc import ABC, abstractmethod
 from typing import Any
@@ -224,18 +220,34 @@ class TabDDPMModel(Model):
             epochs: int,
             verbose: bool = True,
             device: str = "cpu",
+            target: str = "income"
     ):
         super().__init__(full_data, data, device)
 
         self.epochs = int(epochs)
         self.verbose = bool(verbose)
-        self.discrete_columns = discrete_columns
-        self.num_classes = self._get_num_classes(full_data, discrete_columns)
-        self.num_numerical_features = self.full_data.shape[1] - len(self.discrete_columns)
+
+        self.discrete_columns = [c for c in discrete_columns if c != target]
+        self.numerical_columns = [c for c in full_data.columns if c not in discrete_columns and c != target]
+        self.target = target
+        self._align_data()
+
+        self.column_names = self.full_data.columns.tolist()
+        self.num_classes = self._get_num_classes()
+        self.y_classes = self._get_y_classes()
+        self.y_dist = self._get_y_dist()
+        self.num_numerical_features = self.full_data.shape[1] - len(self.discrete_columns) - 1
+        self.category_mappings = {
+            col: self.full_data[col].cat.categories
+            for col in self.discrete_columns + ([self.target] if self.target else [])
+            if pd.api.types.is_categorical_dtype(self.full_data[col])
+        }
+
         # TODO: For now adult only config copied, make it configurable by input
         self.lr = 0.001809824563637657
         self.weight_decay = 0.0
-        self.steps = 30000
+        # TODO: Adjust stepszie, now used 60 --> 500 rounds * 60 = 30000 steps (as baseline)
+        self.steps = 60
         self.batch_size = 4096
         rtdl_params = {
             "d_layers": [1024, 512],
@@ -259,6 +271,9 @@ class TabDDPMModel(Model):
         self.diffusion = GaussianMultinomialDiffusion(
             num_classes=self.num_classes,
             num_numerical_features=self.num_numerical_features,
+            y_dist=self.y_dist,
+            column_names=self.column_names,
+            category_mappings=self.category_mappings,
             denoise_fn=self.model,
             gaussian_loss_type="mse",
             num_timesteps=1000,
@@ -266,6 +281,7 @@ class TabDDPMModel(Model):
             device=self.device
         )
         self.diffusion.to(self.device)
+        self.loss_values = None
 
         self._weights_lock = threading.RLock()
         self._cpu_weights: dict[str, torch.Tensor] | None = None
@@ -282,11 +298,21 @@ class TabDDPMModel(Model):
             device=self.device
         )
         trainer.run_loop()
-        self.loss_history = trainer.loss_history
+        # TODO: Check how progresses after + warmstart
+        self.loss_values = trainer.loss_history
         self._refresh_cpu_snapshot()
 
     def sample(self, num_samples: int, seed: int = 42):
-        pass
+        if not self.y_dist:
+            self.y_dist = self._get_y_dist()
+        torch.manual_seed(seed)
+        self.diffusion.eval()
+        with torch.no_grad():
+            samples = self.diffusion.sample(num_samples, self.y_dist)
+            return samples
+
+    def is_trained(self) -> bool:
+        return self._cpu_weights is not None
 
     def get_weights(self):
         with self._weights_lock:
@@ -299,42 +325,23 @@ class TabDDPMModel(Model):
             return
         with self._weights_lock:
             ref = self.model.state_dict()
-            for k, v in list(weights.items()):
-                if torch.is_tensor(v) and k in ref and v.dtype != ref[k].dtype:
-                    weights[k] = v.to(ref[k].dtype)
-            self.model.load_state_dict(weights, strict=True)
+            norm = self._coerce_dtypes(weights, ref)
+            self.model.load_state_dict(norm, strict=True)
             self._refresh_cpu_snapshot()
 
     def encode(self) -> dict[str, Any]:
         with self._weights_lock:
             if self._cpu_weights is None:
                 return None
-            with io.BytesIO() as buf:
-                torch.save(self._cpu_weights, buf)
-                raw = buf.getvalue()
-            comp = gzip.compress(raw)
-            checksum = hashlib.sha256(comp).hexdigest()
-            return {
-                "model": base64.b64encode(comp).decode("utf-8"),
-                "checksum": checksum,
-                "bytes": len(comp),
-            }
+            # Only one state dict (no generator/discriminator split)
+            return encode_state_dict_pair_blob(self._cpu_weights, {}, as_ascii=True)
 
     def decode(self, encoded: dict[str, Any]) -> dict[str, dict[str, torch.Tensor]]:
-        comp = base64.b64decode(encoded["model"])
-        checksum = encoded["checksum"]
-        if hashlib.sha256(comp).hexdigest() != checksum:
-            raise ValueError("Checksum mismatch.")
-        buf = io.BytesIO(gzip.decompress(comp))
-        obj = torch.load(buf, map_location="cpu")
-        for k, v in list(obj.items()):
-            if torch.is_tensor(v) and v.dtype == torch.float64:
-                obj[k] = v.float()
-        return obj
+        g, _ = decode_state_dict_pair_blob(encoded)
+        return g
 
     def decode_and_load(self, package: dict[str, Any]) -> None:
-        decoded = self.decode(package)
-        self.set_weights(decoded)
+        self.set_weights(self.decode(package))
 
     def get_loss_values(self):
         return getattr(self, "loss_values", None)
@@ -343,14 +350,28 @@ class TabDDPMModel(Model):
         if hasattr(self, "loss_values"):
             self.loss_values = None
 
-    def _get_num_classes(self, full_df: pd.DataFrame, discrete_columns: list[str]) -> np.ndarray:
-        if not discrete_columns:
+    def _get_num_classes(self) -> np.ndarray:
+        if not self.discrete_columns:
             return np.array([0], dtype=np.int64)
-        return np.array([full_df[c].astype('category').cat.categories.size
-                         for c in discrete_columns], dtype=np.int64)
+
+        num_classes = np.array([self.full_data[c].nunique() for c in self.discrete_columns], dtype=np.int64)
+        return num_classes
+
+    def _get_y_classes(self) -> int:
+        if not self.target:
+            return 0
+        num_classes = self.full_data[self.target].nunique()
+        return num_classes
+
+    def _get_y_dist(self) -> np.ndarray | None:
+        if not self.target:
+            return None
+        y_counts = self.full_data[self.target].value_counts().sort_index()
+        y_dist = y_counts / y_counts.sum()
+        return torch.tensor(y_dist.to_numpy(dtype=np.float32), dtype=torch.float32, device=self.device)
 
     def _get_train_iter(self, shuffle=True):
-        dataset = TabularDataset(self.data, self.discrete_columns)
+        dataset = TabularDataset(self.data, self.discrete_columns, self.target)
         loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=shuffle, drop_last=True)
         return iter(loader)
 
@@ -361,20 +382,38 @@ class TabDDPMModel(Model):
         with self._weights_lock:
             self._cpu_weights = self._snapshot_cpu()
 
+    def _align_data(self):
+        ordered_columns = self.numerical_columns + self.discrete_columns + [self.target]
+        self.full_data = self.full_data[ordered_columns]
+        self.data = self.data[ordered_columns]
+
+
 class TabularDataset(Dataset):
-    def __init__(self, data: pd.DataFrame, discrete_columns: list[str]):
+    def __init__(self, data: pd.DataFrame, discrete_columns: list[str], target: str):
         self.data = data.reset_index(drop=True)
-        self.discrete_columns = discrete_columns
-        self.numerical_columns = [c for c in data.columns if c not in discrete_columns]
+        self.target = target
+        self.discrete_columns = [c for c in discrete_columns if c != target]
+        self.numerical_columns = [c for c in data.columns if c not in discrete_columns and c != target]
+
+        # Convert to numeric codes
+        for col in self.discrete_columns:
+            self.data[col] = self.data[col].cat.codes
 
     def __len__(self):
         return len(self.data)
 
     def __getitem__(self, idx):
         row = self.data.iloc[idx]
-        x_num = torch.tensor(row[self.numerical_columns].values, dtype=torch.float32)
-        x_cat = torch.tensor(row[self.discrete_columns].values, dtype=torch.long)
-        return x_num, x_cat
+        x_num = row[self.numerical_columns].to_numpy(dtype=np.float32)
+        x_cat = row[self.discrete_columns].to_numpy(dtype=np.int64)
+
+        x = np.concatenate([x_num, x_cat])
+        y = row[self.target]
+        if pd.api.types.is_categorical_dtype(self.data[self.target]):
+            y = self.data[self.target].cat.codes.iloc[idx]
+        x_tensor = torch.from_numpy(x)
+        y_tensor = torch.tensor(y, dtype=torch.long)
+        return x_tensor, y_tensor
 
 def get_model(
     model_name,

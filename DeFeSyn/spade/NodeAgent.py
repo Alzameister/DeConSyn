@@ -30,6 +30,7 @@ class NodeConfig:
     alpha: float = 0.5
     run_id: str | None = None
     device: str = "auto"
+    model_type: str = "tabddpm"
 
 @dataclass(frozen=True)
 class NodeData:
@@ -39,6 +40,7 @@ class NodeData:
     # Global context (For CTGAN Initialization/Evaluation)
     full_train: pd.DataFrame
     full_test: pd.DataFrame
+
 
 class NodeAgent(Agent):
     """
@@ -64,6 +66,9 @@ class NodeAgent(Agent):
         # logging
         self.log = logger.bind(node_id=self.id, jid=self.jid)
         self.event = self.log.bind(stream="event")
+
+        self.model_type: str = cfg.model_type
+        self.log.info("Using model: {}", self.model_type)
 
         if cfg.device == "auto":
             if torch.cuda.is_available():

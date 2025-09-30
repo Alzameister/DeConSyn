@@ -14,7 +14,7 @@ from spade.behaviour import FSMBehaviour, State, OneShotBehaviour
 from spade.message import Message
 from spade.template import Template
 
-from DeFeSyn.models.models import CTGANModel, Model
+from DeFeSyn.models.models import CTGANModel, Model, TabDDPMModel
 from DeFeSyn.utils.io import make_path, save_weights_pt, save_model_pickle
 
 # ----------------------------
@@ -192,7 +192,11 @@ class BaseState(State, ABC):
             ext="pkl",
             repo_root=self.agent.repo_dir,
         )
-        save_model_pickle(model=self.agent.model.model, path=p)
+        model = self.agent.model
+        if hasattr(model, "diffusion"):
+            save_model_pickle(model=model.diffusion, path=p)
+        elif hasattr(model, "model"):
+            save_model_pickle(model=model.model, path=p)
 
     # ---- Barrier helpers ----
     async def _send_barrier_hello(self, to_jid: str, token: str):
@@ -225,7 +229,7 @@ class BaseState(State, ABC):
         msg = Message(to=str(peer))
         msg.set_metadata("performative", MT_INFORM)
         msg.set_metadata("type", T_GOSSIP_WEIGHTS)
-        msg.set_metadata("content-type", "application/x-ctgan-weights")
+        msg.set_metadata("content-type", "application/x-weights")
         msg.set_metadata("content-encoding", "b85+zlib")
         msg.set_metadata("msg_id", msg_id)
         msg.set_metadata("rid", rid)
@@ -343,16 +347,28 @@ class TrainingState(BaseState):
         if self.agent.model:
             return
         dcols = discrete_cols_of(part_train)
-        self.agent.log.info("TRAIN: init CTGAN (epochs={}, device={}, discrete={})",
+        self.agent.log.info("TRAIN: init Model (epochs={}, device={}, discrete={})",
                             self._epochs, self.agent.device, dcols)
-        self.agent.model: Model = CTGANModel(
-            full_data=full_train,
-            data=part_train,
-            discrete_columns=dcols,
-            epochs=self._epochs,
-            verbose=True,
-            device=self.agent.device,
-        )
+        if self.agent.model_type.lower() == "tabddpm":
+            self.agent.model: Model = TabDDPMModel(
+                full_data=full_train,
+                data=part_train,
+                discrete_columns=dcols,
+                epochs=self._epochs,
+                verbose=True,
+                device=self.agent.device,
+            )
+        elif self.agent.model_type.lower() == "ctgan":
+            self.agent.model: Model = CTGANModel(
+                full_data=full_train,
+                data=part_train,
+                discrete_columns=dcols,
+                epochs=self._epochs,
+                verbose=True,
+                device=self.agent.device,
+            )
+        else:
+            self.agent.log.error("No Model found for type '{}'", self.agent.model_type)
 
     async def _load_weights(self):
         if not self.agent.weights:
@@ -360,8 +376,8 @@ class TrainingState(BaseState):
             return
         self.log.info("TRAIN: warm start → loading weights")
         self.agent.model.set_weights(self.agent.weights)
-        debug_check_single_weight(self.agent, which="generator")
-        debug_check_single_weight(self.agent, which="discriminator")
+        #debug_check_single_weight(self.agent, which="generator")
+        #debug_check_single_weight(self.agent, which="discriminator")
 
     async def _train(self) -> TrainSnapshot:
         t0 = time.perf_counter()
@@ -403,16 +419,31 @@ class TrainingState(BaseState):
 
     def _train_event(self, it: int, ms: float):
         lv = self.agent.loss_values
-        g = float(lv["Generator Loss"].iloc[-1]) if lv is not None and not lv.empty else None
-        d = float(lv["Discriminator Loss"].iloc[-1]) if lv is not None and not lv.empty else None
-        self.ev(
-            "TRAIN", "ctgan",
-            local_step=it,
-            epochs=int(self._epochs or 0),
-            epoch_ms=float(ms),
-            G_loss=g,
-            D_loss=d,
-        )
+        if lv is not None and not lv.empty:
+            if "Generator Loss" in lv and "Discriminator Loss" in lv:
+                g = float(lv["Generator Loss"].iloc[-1])
+                d = float(lv["Discriminator Loss"].iloc[-1])
+                self.ev(
+                    "TRAIN", "ctgan",
+                    local_step=it,
+                    epochs=int(self._epochs or 0),
+                    epoch_ms=float(ms),
+                    G_loss=g,
+                    D_loss=d,
+                )
+            elif "mloss" in lv and "gloss" in lv and "loss" in lv:
+                m = float(lv["mloss"].iloc[-1])
+                g = float(lv["gloss"].iloc[-1])
+                s = float(lv["loss"].iloc[-1])
+                self.ev(
+                    "TRAIN", "tabddpm",
+                    local_step=it,
+                    epochs=int(self._epochs or 0),
+                    epoch_ms=float(ms),
+                    M_loss=m,
+                    G_loss=g,
+                    loss=s,
+                )
 
 # ----------------------------
 # Pull
@@ -616,13 +647,18 @@ class PushState(BaseState):
             self.log.warning("PUSH: consensus step returned None → skipping weight update")
 
         def _valid_weights(w) -> bool:
-            return (
-                    isinstance(w, dict)
-                    and isinstance(w.get("generator"), dict)
-                    and isinstance(w.get("discriminator"), dict)
-                    and all(v is not None for v in w["generator"].values())
-                    and all(v is not None for v in w["discriminator"].values())
-            )
+            if not isinstance(w, dict):
+                return False
+            # CTGAN: expects generator/discriminator dicts
+            if "generator" in w and "discriminator" in w:
+                return (
+                        isinstance(w["generator"], dict)
+                        and isinstance(w["discriminator"], dict)
+                        and all(v is not None for v in w["generator"].values())
+                        and all(v is not None for v in w["discriminator"].values())
+                )
+            # TabDDPM: expects flat dict of tensors
+            return all(torch.is_tensor(v) and v is not None for v in w.values())
 
         if not _valid_weights(self.agent.weights):
             self.log.warning(
@@ -694,13 +730,21 @@ def debug_check_single_weight(agent, which="generator"):
     and the live module on GPU.
     """
     assert agent.model is not None, "Model not initialized yet."
+    weights = agent.weights
 
-    cpu_block = agent.weights[which]
-    param_key = next(k for k, v in cpu_block.items() if torch.is_tensor(v))
-
-    cpu_t = cpu_block[param_key]
-    module = getattr(agent.model.model, f"_{which}")
-    gpu_t = module.state_dict()[param_key]
+    # CTGAN: nested dict
+    if isinstance(weights, dict) and which in ("generator", "discriminator") and which in weights:
+        cpu_block = weights[which]
+        param_key = next(k for k, v in cpu_block.items() if torch.is_tensor(v))
+        cpu_t = cpu_block[param_key]
+        module = getattr(agent.model.model, f"_{which}")
+        gpu_t = module.state_dict()[param_key]
+    # TabDDPM: flat dict
+    elif isinstance(weights, dict):
+        param_key = next(k for k, v in weights.items() if torch.is_tensor(v))
+        cpu_t = weights[param_key]
+        gpu_t = agent.model.model.state_dict()[param_key]
+        which = "tabddpm"
 
     cpu_val = cpu_t.view(-1)[0].item()
     gpu_val = gpu_t.detach().view(-1)[0].item()
@@ -711,7 +755,6 @@ def debug_check_single_weight(agent, which="generator"):
         f"device={gpu_t.device} cpu_val={cpu_val:.8f} gpu_val={gpu_val:.8f} diff={diff:.3e}"
     )
 
-    # Strict numeric assertion
     if not torch.allclose(cpu_t, gpu_t.detach().cpu(), atol=1e-7, rtol=1e-7):
         agent.log.error(f"[WEIGHT-CHECK] MISMATCH in {which}.{param_key}")
         raise RuntimeError(f"Mismatch in {which}.{param_key}")

@@ -2,7 +2,7 @@
 Based on https://github.com/openai/guided-diffusion/blob/main/guided_diffusion
 and https://github.com/ehoogeboom/multinomial_diffusion
 """
-
+import pandas as pd
 import torch.nn.functional as F
 import torch
 import math
@@ -64,6 +64,9 @@ class GaussianMultinomialDiffusion(torch.nn.Module):
             self,
             num_classes: np.array,
             num_numerical_features: int,
+            y_dist,
+            column_names,
+            category_mappings,
             denoise_fn,
             num_timesteps=1000,
             gaussian_loss_type='mse',
@@ -87,6 +90,9 @@ class GaussianMultinomialDiffusion(torch.nn.Module):
         self.num_classes_expanded = torch.from_numpy(
             np.concatenate([num_classes[i].repeat(num_classes[i]) for i in range(len(num_classes))])
         ).to(device)
+        self.y_dist = y_dist
+        self.column_names = column_names
+        self.category_mappings = category_mappings
 
         self.slices_for_classes = [np.arange(self.num_classes[0])]
         offsets = np.cumsum(self.num_classes)
@@ -608,7 +614,7 @@ class GaussianMultinomialDiffusion(torch.nn.Module):
         x_in = torch.cat([x_num_t, log_x_cat_t], dim=1)
 
         model_out = self._denoise_fn(
-            x_in,
+            x_in.float(),
             t,
             **out_dict
         )
@@ -936,7 +942,7 @@ class GaussianMultinomialDiffusion(torch.nn.Module):
             log_z = self.log_sample_categorical(uniform_logits)
 
         y = torch.multinomial(
-            y_dist,
+            self.y_dist,
             num_samples=b,
             replacement=True
         )
@@ -961,7 +967,25 @@ class GaussianMultinomialDiffusion(torch.nn.Module):
         if has_cat:
             z_cat = ohe_to_categories(z_ohe, self.num_classes)
         sample = torch.cat([z_norm, z_cat], dim=1).cpu()
-        return sample, out_dict
+        # Combine sample and out dict together
+        sample = self.align_sample_and_out_dict(sample, out_dict)
+        sample_df = pd.DataFrame(sample.cpu().numpy(), columns=self.column_names)
+        sample_df = self.decode_categoricals(sample_df)
+
+        return sample_df
+
+    def align_sample_and_out_dict(self, sample: torch.Tensor, out_dict: dict) -> torch.Tensor:
+        tensors = [sample]
+        for v in out_dict.values():
+            v = v if v.ndim == 2 else v.unsqueeze(1)
+            tensors.append(v)
+        return torch.cat(tensors, dim=1)
+
+    def decode_categoricals(self, df: pd.DataFrame) -> pd.DataFrame:
+        for col, categories in self.category_mappings.items():
+            if col in df:
+                df[col] = pd.Categorical.from_codes(df[col].astype(int), categories)
+        return df
     
     def sample_all(self, num_samples, batch_size, y_dist, ddim=False):
         if ddim:

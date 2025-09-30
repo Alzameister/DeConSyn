@@ -62,8 +62,10 @@ class SynEvaluator:
                  inf_aux_cols: List[str] = None, secret: str = None, regression: bool = False,
                  link_aux_cols: Tuple[List[str], List[str]] = None, control_frac: float = 0.3,
                  original_name: str = "adult", synthetic_name: str = "CTGAN",
+                 model_type: str = "tabddpm",
                  run_dir: str = None):
         self.seed = 42
+        self.model_type = model_type
         self.manifest_path = manifest_path
         self.model_path = model_path
         self.output_dir = Path(output_dir)
@@ -112,6 +114,11 @@ class SynEvaluator:
     def evaluate(self) -> Dict[str, Dict[str, Union[float, dict, str]]]:
         loader = DatasetLoader(self.manifest_path)
         full_train = loader.get_train()
+        if self.model_type.lower() == "tabddpm":
+            # Convert all integer columns in full_train to float
+            int_cols = full_train.select_dtypes(include=['int64']).columns
+            full_train[int_cols] = full_train[int_cols].astype('float64')
+
         model = load_model_pickle(Path(self.model_path))
         synthetic = model.sample(len(full_train), self.seed)
 

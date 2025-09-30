@@ -247,7 +247,7 @@ class TabDDPMModel(Model):
         self.lr = 0.001809824563637657
         self.weight_decay = 0.0
         # TODO: Adjust stepszie, now used 60 --> 500 rounds * 60 = 30000 steps (as baseline)
-        self.steps = 60
+        self.steps = 100
         self.batch_size = 4096
         rtdl_params = {
             "d_layers": [1024, 512],

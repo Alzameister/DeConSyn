@@ -14,7 +14,7 @@ from spade.behaviour import FSMBehaviour, State
 from spade.message import Message
 from spade.template import Template
 
-from DeFeSyn.training_framework.models.models import CTGANModel, Model, TabDDPMModel
+from DeFeSyn.models.models import CTGANModel, Model, TabDDPMModel
 from DeFeSyn.training_framework.communication.receive_behaviour import WaitResponse
 from DeFeSyn.io.io import make_path, save_weights_pt, save_model_pickle
 

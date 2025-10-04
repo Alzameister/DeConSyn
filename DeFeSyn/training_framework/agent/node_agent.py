@@ -10,7 +10,7 @@ from spade.template import Template
 from loguru import logger
 
 from DeFeSyn.training_framework.consensus.consensus import Consensus
-from DeFeSyn.training_framework.models.models import Model
+from DeFeSyn.models.models import Model
 from DeFeSyn.training_framework.fsm.fsm_behaviour import NodeFSMBehaviour, TRAINING_STATE, StartState, TrainingState, \
     PullState, PushState, FinalState, START_STATE, PULL_STATE, PUSH_STATE, FINAL_STATE
 from DeFeSyn.training_framework.communication.receive_behaviour import BarrierHelloResponder, BarrierAckRouter, \

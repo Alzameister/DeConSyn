@@ -1,5 +1,5 @@
 from DeFeSyn.data.data_loader import DatasetLoader
-from DeFeSyn.training_framework.models.CTGAN.synthesizers.ctgan import CTGAN
+from DeFeSyn.models.CTGAN.synthesizers.ctgan import CTGAN
 from DeFeSyn.training_framework.fsm.fsm_behaviour import discrete_cols_of
 from DeFeSyn.training_framework.start import ADULT_PATH, ADULT_MANIFEST
 from DeFeSyn.io.io import get_repo_root

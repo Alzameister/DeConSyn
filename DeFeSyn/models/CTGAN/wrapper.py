@@ -3,7 +3,7 @@ from typing import Dict, Optional, Any
 
 import torch, io, gzip, base64, hashlib
 
-from DeFeSyn.training_framework.models.CTGAN.synthesizers.ctgan import CTGAN
+from DeFeSyn.models.CTGAN.synthesizers.ctgan import CTGAN
 
 
 class CTGANModel:

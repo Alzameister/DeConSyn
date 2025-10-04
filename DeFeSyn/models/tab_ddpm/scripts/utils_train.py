@@ -1,6 +1,6 @@
 import numpy as np
 
-from DeFeSyn.training_framework.models.tab_ddpm import MLPDiffusion, ResNetDiffusion
+from DeFeSyn.models.tab_ddpm import MLPDiffusion, ResNetDiffusion
 
 
 def get_model(

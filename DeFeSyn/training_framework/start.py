@@ -10,7 +10,7 @@ from joblib import parallel_config
 
 from DeFeSyn.data.DataLoader import DatasetLoader
 from DeFeSyn.logging.logger import init_logging
-from DeFeSyn.spade.NodeAgent import NodeAgent, NodeConfig, NodeData
+from DeFeSyn.training_framework.agent.NodeAgent import NodeAgent, NodeConfig, NodeData
 from DeFeSyn.utils.graph import Graph, agent_jid
 from DeFeSyn.utils.seed import set_global_seed
 

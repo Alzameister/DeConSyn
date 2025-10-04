@@ -12,8 +12,8 @@ from DeFeSyn.data.DataLoader import DatasetLoader
 from DeFeSyn.training_framework.models.CTGAN.synthesizers.ctgan import CTGAN
 from DeFeSyn.training_framework.models.tab_ddpm import GaussianMultinomialDiffusion, MLPDiffusion, ResNetDiffusion
 from DeFeSyn.training_framework.models.tab_ddpm.trainer import Trainer
-from DeFeSyn.spade.serialization import encode_state_dict_pair_blob, decode_state_dict_pair_blob
-from DeFeSyn.spade.snapshots import snapshot_state_dict_pair
+from DeFeSyn.io.serialization import encode_state_dict_pair_blob, decode_state_dict_pair_blob
+from DeFeSyn.io.snapshots import snapshot_state_dict_pair
 from DeFeSyn.io.io import get_repo_root
 
 

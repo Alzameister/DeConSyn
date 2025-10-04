@@ -7,7 +7,7 @@ from typing import Optional
 from spade.behaviour import CyclicBehaviour, OneShotBehaviour
 from spade.message import Message
 
-from DeFeSyn.spade.communication.PresenceBehaviour import PresenceBehaviour
+from DeFeSyn.training_framework.communication.PresenceBehaviour import PresenceBehaviour
 
 
 class ReceiveAckBehaviour(CyclicBehaviour):

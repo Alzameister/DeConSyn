@@ -10,12 +10,13 @@ import random
 from typing import Optional, Iterable, Dict, Any
 
 import gc, psutil, torch
-from spade.behaviour import FSMBehaviour, State, OneShotBehaviour
+from spade.behaviour import FSMBehaviour, State
 from spade.message import Message
 from spade.template import Template
 
-from DeFeSyn.models.models import CTGANModel, Model, TabDDPMModel
-from DeFeSyn.utils.io import make_path, save_weights_pt, save_model_pickle
+from DeFeSyn.training_framework.models.models import CTGANModel, Model, TabDDPMModel
+from DeFeSyn.training_framework.communication.receive_behaviour import WaitResponse
+from DeFeSyn.io.io import make_path, save_weights_pt, save_model_pickle
 
 # ----------------------------
 # Constants / Types
@@ -24,7 +25,6 @@ START_STATE = "START_STATE"
 TRAINING_STATE = "TRAINING_STATE"
 PULL_STATE = "PULL_STATE"
 PUSH_STATE = "PUSH_STATE"
-RECEIVE_STATE = "RECEIVE_STATE"
 FINAL_STATE = "FINAL_STATE"
 
 MT_INFORM = "inform"
@@ -478,7 +478,7 @@ class PullState(BaseState):
             rid, _ = await self._send_gossip_request(neighbor, self.agent.current_iteration, kind="pull")
 
             fut = asyncio.get_running_loop().create_future()
-            waiter = _WaitResponse(fut, neighbor, timeout=180.0)
+            waiter = WaitResponse(fut, neighbor, timeout=180.0)
             self.agent.add_behaviour(
                 waiter,
                 Template(
@@ -544,47 +544,6 @@ class PullState(BaseState):
 # ----------------------------
 # Push
 # ----------------------------
-class _WaitResponse(OneShotBehaviour):
-    """Small waiter that only resolves the future when a reply arrives or timeout/peer-offline."""
-
-    def __init__(self, fut, peer_jid: str, poll_interval: float = 1.0, timeout: float = 120.0):
-        super().__init__()
-        self.fut = fut
-        self.peer_jid = peer_jid
-        self.poll_interval = poll_interval
-        self.timeout = timeout
-
-    def _peer_available(self) -> bool:
-        active = getattr(self.agent, "active_neighbors", None)
-        if isinstance(active, set):
-            return self.peer_jid in active
-        contact = self.agent.presence.get_contacts().get(self.peer_jid)
-        return bool(contact and contact.is_available())
-
-    async def run(self):
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + self.timeout
-
-        if self.timeout == 0:
-            if not self._peer_available():
-                self.agent.log.warning("WaitResponse: peer {} unavailable (immediate)", self.peer_jid)
-                self.fut.set_result(None)
-                return
-            msg = await self.receive(timeout=0)
-            self.fut.set_result(msg)
-            return
-
-        while True:
-            remaining = deadline - loop.time()
-            if remaining <= 0:
-                self.agent.log.warning("WaitResponse: timeout waiting for {}", self.peer_jid)
-                self.fut.set_result(None)
-                return
-
-            msg = await self.receive(timeout=min(self.poll_interval, remaining))
-            if msg:
-                self.fut.set_result(msg)
-                return
 
 class PushState(BaseState):
     async def run(self):
@@ -604,7 +563,7 @@ class PushState(BaseState):
         rid, _ver = await self._send_gossip_request(peer, it, kind="push")
 
         fut = asyncio.get_running_loop().create_future()
-        waiter = _WaitResponse(fut, peer)
+        waiter = WaitResponse(fut, peer)
         self.agent.add_behaviour(
             waiter,
             Template(metadata={"performative": MT_INFORM, "type": T_GOSSIP_WEIGHTS, "rid": rid})

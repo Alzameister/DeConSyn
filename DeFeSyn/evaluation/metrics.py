@@ -4,7 +4,7 @@ import numpy as np
 import torch
 import matplotlib.pyplot as plt
 
-from DeFeSyn.utils.io import get_repo_root
+from DeFeSyn.io.io import get_repo_root
 
 ITER_RE = re.compile(r"iter-(\d+)-weights\.pt$")
 

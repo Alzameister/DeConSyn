@@ -34,7 +34,7 @@ RSYNC_FLAGS="-a --no-perms --no-owner --no-group -h --info=progress2 --partial"
 
 PROJECT_ROOT="/home/ubuntu/FeDeSyn"
 PYTHON_EXEC="$PROJECT_ROOT/.venv/bin/python"
-SCRIPT="$PROJECT_ROOT/DeFeSyn/spade/start.py"
+SCRIPT="$PROJECT_ROOT/DeFeSyn/training_framework/start.py"
 
 RUNS_DIR="$PROJECT_ROOT/runs"
 LOGS_DIR="$PROJECT_ROOT/logs"
@@ -117,7 +117,7 @@ run_once() {
 
   (
     cd "$PROJECT_ROOT"
-    chrt -r 10 "$PYTHON_EXEC" -m DeFeSyn.spade.start run \
+    chrt -r 10 "$PYTHON_EXEC" -m DeFeSyn.training_framework.start run \
       --agents "$agents" \
       --epochs "$epochs" \
       --iterations "$iterations" \

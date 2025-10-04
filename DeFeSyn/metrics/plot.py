@@ -1,3 +1,4 @@
+import ast
 import os
 import pandas as pd
 import matplotlib.pyplot as plt
@@ -16,7 +17,7 @@ def get_runs_dir():
         return None
     return os.listdir(path)
 
-def get_runs_results_df():
+def get_runs_results_df(it: int = 500):
     # Get results of each agent in each run
     runs_path = get_runs_path()
     runs = get_runs_dir()
@@ -40,11 +41,14 @@ def get_runs_results_df():
             agents = [d for d in os.listdir(run_attempt_path) if d.startswith('agent_')]
             for agent in agents:
                 agent_path = os.path.join(run_attempt_path, agent)
-                result_file = os.path.join(agent_path, 'results/results.csv')
+                results_file = f"results_iter_{it:04d}/results.csv"
+                result_file = os.path.join(agent_path, results_file)
                 if os.path.exists(result_file):
                     df = pd.read_csv(result_file)
                     df['run'] = run_attempt
                     df['agent'] = agent
+                    clean_disclosure(df)
+                    clean_basicstats(df)
                     results.append(df)
 
     if results:
@@ -52,16 +56,58 @@ def get_runs_results_df():
     else:
         return pd.DataFrame()
 
-def get_avg_agents_df():
-    df = get_runs_results_df()
+def clean_disclosure(df: pd.DataFrame) -> pd.DataFrame:
+    if 'Disclosure' in df.columns:
+        disclosure = df['Disclosure'].str.replace('[\[\]]', '', regex=True)
+        if disclosure.isnull().all():
+            df.drop(columns=['Disclosure'], inplace=True)
+            return df
+        disclosure_dict = df['Disclosure'].apply(safe_eval)
+        keys = disclosure_dict.apply(lambda d: list(d.keys()))
+        values = disclosure_dict.apply(lambda d: list(d.values()))
+        # Set keys as columns with values
+        for i in range(len(keys)):
+            for j in range(len(keys[i])):
+                key = keys[i][j]
+                value = values[i][j]
+                df.at[i, key] = value
+        df.drop(columns=['Disclosure'], inplace=True)
+    return df
+
+def clean_basicstats(df: pd.DataFrame) -> pd.DataFrame:
+    if 'BasicStats' in df.columns:
+        basicstats = df['BasicStats'].str.replace('[\[\]]', '', regex=True)
+        if basicstats.isnull().all():
+            df.drop(columns=['BasicStats'], inplace=True)
+            return df
+        basicstats_dict = df['BasicStats'].apply(safe_eval)
+        keys = basicstats_dict.apply(lambda d: list(d.keys()))
+        values = basicstats_dict.apply(lambda d: list(d.values()))
+        # Set keys as columns with values
+        for i in range(len(keys)):
+            for j in range(len(keys[i])):
+                key = keys[i][j].capitalize()
+                value = values[i][j]
+                df.at[i, key] = value
+        df.drop(columns=['BasicStats'], inplace=True)
+    return df
+
+def safe_eval(x):
+    if pd.isna(x):
+        return {}
+    return ast.literal_eval(x)
+
+
+def get_avg_agents_df(it: int = 500):
+    df = get_runs_results_df(it)
     if df is None or df.empty:
         return None
     numeric_cols = df.select_dtypes(include='number').columns
     avg_df = df.groupby(['run'])[numeric_cols].mean().reset_index()
     return avg_df
 
-def get_avg_runs_df():
-    df = get_avg_agents_df()
+def get_avg_runs_df(it: int = 500):
+    df = get_avg_agents_df(it)
     baseline_df = get_baseline_df()
     baseline_df['run'] = 'baseline_ctgan'
     # Merge df and baseline_df on 'run' column
@@ -99,8 +145,8 @@ def get_run_topology(run_name: str) -> str:
         return parts[3].capitalize()
     return 'Baseline'
 
-def plot_avg():
-    df = get_avg_runs_df()
+def plot_avg(it: int = 500):
+    df = get_avg_runs_df(it)
     runs_path = get_runs_path()
     plots_dir = os.path.join(runs_path, 'plots')
     os.makedirs(plots_dir, exist_ok=True)
@@ -134,4 +180,3 @@ def plot_avg():
             plt.savefig(os.path.join(plots_dir, fname))
             plt.close()
 
-plot_avg()

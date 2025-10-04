@@ -14,9 +14,9 @@
 #   $3 = ITERATIONS_LIST (space-separated; zipped with EPOCHS_LIST)
 #   $4 = TOPOLOGY (space-separated, e.g., "small-world full")
 
-if [[ $# -lt 4 ]]; then
-  echo "Usage: $(basename "$0") \"AGENTS_LIST\" \"EPOCHS_LIST\" \"ITERATIONS_LIST\" \"TOPOLOGY\""
-  echo "Example: $(basename "$0") \"7 4\" \"1 1\" \"500 500\" \"small-world full\""
+if [[ $# -lt 5 ]]; then
+  echo "Usage: $(basename "$0") \"AGENTS_LIST\" \"EPOCHS_LIST\" \"ITERATIONS_LIST\" \"TOPOLOGY\" \"MODEL-TYPE\""
+  echo "Example: $(basename "$0") \"7 4\" \"1 1\" \"500 500\" \"small-world full\" \"tabddpm\""
   exit 1
 fi
 
@@ -57,6 +57,7 @@ read -r -a AGENTS_LIST      <<< "$1"
 read -r -a EPOCHS_LIST      <<< "$2"
 read -r -a ITERATIONS_LIST  <<< "$3"
 read -r -a TOPOLOGY_LIST    <<< "$4"
+read -r -a MODEL_TYPE_LIST  <<< "$5"
 
 if [[ ${#EPOCHS_LIST[@]} -ne ${#ITERATIONS_LIST[@]} ]]; then
   echo "ERROR: EPOCHS_LIST and ITERATIONS_LIST must have the same length."
@@ -110,9 +111,9 @@ delete_runs_and_logs() {
 # Runner
 # ----------------------------
 run_once() {
-  local agents="$1" epochs="$2" iterations="$3" topology="$4"
+  local agents="$1" epochs="$2" iterations="$3" topology="$4" model_type="$5"
 
-  echo ">>> Running: agents=$agents, epochs=$epochs, iterations=$iterations, topology=$topology"
+  echo ">>> Running: agents=$agents, epochs=$epochs, iterations=$iterations, topology=$topology, model_type=$model_type"
 
   (
     cd "$PROJECT_ROOT"
@@ -129,9 +130,10 @@ run_once() {
       --seed "$SEED" \
       --n-jobs "$N_JOBS" \
       --log-level "$LOG_LEVEL"
+      --model-type "$model_type"
   )
 
-  echo ">>> Finished: agents=$agents, epochs=$epochs, iterations=$iterations, topology=$topology"
+  echo ">>> Finished: agents=$agents, epochs=$epochs, iterations=$iterations, topology=$topology, model_type=$model_type"
   echo ">>> Sleeping ${SLEEP_SECS}s to let XMPP server cleanup..."
   sleep "$SLEEP_SECS"
   echo "------------------------------------------------------------"
@@ -140,10 +142,11 @@ run_once() {
 # ----------------------------
 # Main loop
 # ----------------------------
+for model_type in "${MODEL_TYPE_LIST[@]}"; do
 for topology in "${TOPOLOGY_LIST[@]}"; do
   for agents in "${AGENTS_LIST[@]}"; do
     for i in "${!EPOCHS_LIST[@]}"; do
-      run_once "$agents" "${EPOCHS_LIST[$i]}" "${ITERATIONS_LIST[$i]}" "$topology"
+      run_once "$agents" "${EPOCHS_LIST[$i]}" "${ITERATIONS_LIST[$i]}" "$topology" "$model_type"
       echo ">>> Syncing runs and logs to laptop via reverse SSH..."
       if sync_runs_and_logs; then
         echo ">>> Sync OK. Deleting local runs/logs to free space."
@@ -154,4 +157,5 @@ for topology in "${TOPOLOGY_LIST[@]}"; do
       sleep "$SLEEP_SECS"
     done
   done
+done
 done

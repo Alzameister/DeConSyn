@@ -5,16 +5,16 @@ from typing import Any
 import numpy as np
 import pandas as pd
 import torch
+import os
 from torch.utils.data import DataLoader, Dataset
 
-from DeFeSyn.models.CTGAN.synthesizers.ctgan import CTGAN
-from DeFeSyn.models.tab_ddpm import GaussianMultinomialDiffusion, MLPDiffusion, ResNetDiffusion
-from DeFeSyn.models.tab_ddpm.trainer import Trainer
+from DeFeSyn.data.DataLoader import DatasetLoader
+from DeFeSyn.training_framework.models.CTGAN.synthesizers.ctgan import CTGAN
+from DeFeSyn.training_framework.models.tab_ddpm import GaussianMultinomialDiffusion, MLPDiffusion, ResNetDiffusion
+from DeFeSyn.training_framework.models.tab_ddpm.trainer import Trainer
 from DeFeSyn.spade.serialization import encode_state_dict_pair_blob, decode_state_dict_pair_blob
 from DeFeSyn.spade.snapshots import snapshot_state_dict_pair
-
-
-# from DeFeSyn.models.scripts.train import train
+from DeFeSyn.io.io import get_repo_root
 
 
 class Model(ABC):
@@ -246,7 +246,7 @@ class TabDDPMModel(Model):
         # TODO: For now adult only config copied, make it configurable by input
         self.lr = 0.001809824563637657
         self.weight_decay = 0.0
-        # TODO: Adjust stepszie, now used 60 --> 500 rounds * 60 = 30000 steps (as baseline)
+        # TODO: Adjust stepszie, now used 100 --> 300 Rounds * 100 = 30'000 (as baseline) + 200 rounds extra for safety
         self.steps = 100
         self.batch_size = 4096
         rtdl_params = {
@@ -298,7 +298,6 @@ class TabDDPMModel(Model):
             device=self.device
         )
         trainer.run_loop()
-        # TODO: Check how progresses after + warmstart
         self.loss_values = trainer.loss_history
         self._refresh_cpu_snapshot()
 
@@ -387,6 +386,44 @@ class TabDDPMModel(Model):
         self.full_data = self.full_data[ordered_columns]
         self.data = self.data[ordered_columns]
 
+    def fit_baseline(self):
+        self.steps = 30_000
+
+        self.diffusion = GaussianMultinomialDiffusion(
+            num_classes=self.num_classes,
+            num_numerical_features=self.num_numerical_features,
+            y_dist=self.y_dist,
+            column_names=self.column_names,
+            category_mappings=self.category_mappings,
+            denoise_fn=self.model,
+            gaussian_loss_type="mse",
+            num_timesteps=1000,
+            scheduler="cosine",
+            device=self.device
+        )
+        self.diffusion.to(self.device)
+        self.diffusion.train()
+        train_iter = self._get_train_iter()
+        trainer = Trainer(
+            diffusion=self.diffusion,
+            train_iter=train_iter,
+            lr=self.lr,
+            weight_decay=self.weight_decay,
+            steps=self.steps,
+            device=self.device
+        )
+        trainer.run_loop()
+        self.loss_values = trainer.loss_history
+        self._refresh_cpu_snapshot()
+
+        # Save model under runs/tabddpm_baseline
+
+        root = get_repo_root()
+        path = root / "runs" / "tabddpm" / "tabddpm_baseline"
+        os.makedirs(path, exist_ok=True)
+        model_path = path / "tabddpm_adult_baseline.pkl"
+        torch.save(self.diffusion, model_path)
+
 
 class TabularDataset(Dataset):
     def __init__(self, data: pd.DataFrame, discrete_columns: list[str], target: str):
@@ -429,3 +466,25 @@ def get_model(
     else:
         raise "Unknown model!"
     return model
+
+def discrete_cols_of(df):
+    return [c for c in df.columns if getattr(df[c].dtype, "name", "") == "category"]
+
+if __name__ == '__main__':
+    adult = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/05_Data/adult"
+    manifest = "manifest.yaml"
+    loader = DatasetLoader(f"{adult}/{manifest}")
+    full_train = loader.get_train()
+    full_test = loader.get_test()
+    discrete_columns = discrete_cols_of(full_train)
+
+    model = TabDDPMModel(
+        full_data=full_train,
+        data=full_train,
+        discrete_columns=discrete_columns,
+        epochs=300,
+        verbose=True,
+        device="cpu",
+        target="income"
+    )
+    model.fit_baseline()

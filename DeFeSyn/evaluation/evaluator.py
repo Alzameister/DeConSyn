@@ -13,7 +13,7 @@ import pandas as pd
 import seaborn as sns
 
 from DeFeSyn.data.DataLoader import DatasetLoader
-from DeFeSyn.utils.io import load_model_pickle
+from DeFeSyn.io.io import load_model_pickle
 from FEST.privacy_utility_framework.build.lib.privacy_utility_framework.metrics.privacy_metrics.privacy_metric_manager import \
     PrivacyMetricManager
 from FEST.privacy_utility_framework.build.lib.privacy_utility_framework.metrics.utility_metrics.utility_metric_manager import \
@@ -120,7 +120,8 @@ class SynEvaluator:
             full_train[int_cols] = full_train[int_cols].astype('float64')
 
         model = load_model_pickle(Path(self.model_path))
-        synthetic = model.sample(len(full_train), self.seed)
+        if self.metrics != ['Consensus']:
+            synthetic = model.sample(len(full_train), self.seed)
 
         privacy_res, utility_res, artifacts = {}, {}, {}
 
@@ -717,6 +718,7 @@ def cli(argv: List[str] = None) -> int:
     parser.add_argument("--baseline", action="store_true")
     parser.add_argument("--runs-dir", default=None,
                         help="Parent directory that contains multiple run subfolders to compare.")
+    parser.add_argument("--model-type", default="ctgan")
 
     # Labels
     parser.add_argument("--original-name", default="adult",
@@ -814,7 +816,8 @@ def cli(argv: List[str] = None) -> int:
         regression=bool(args.regression),
         link_aux_cols=link_aux_cols,
         control_frac=args.control_frac,
-        run_dir=args.run_dir
+        run_dir=args.run_dir,
+        model_type=args.model_type
     )
 
     # Optional: set seed if you also want to seed numpy/py modules consistently inside evaluate()
@@ -866,7 +869,8 @@ def cli(argv: List[str] = None) -> int:
             regression=bool(args.regression),
             link_aux_cols=link_aux_cols,
             control_frac=args.control_frac,
-            run_dir=args.run_dir
+            run_dir=args.run_dir,
+            model_type=args.model_type
         )
         artifacts = evaluator.evaluate()
         print("\n========= BASELINE EVALUATION DONE =========")
@@ -905,6 +909,7 @@ def cli(argv: List[str] = None) -> int:
             link_aux_cols=link_aux_cols,
             control_frac=args.control_frac,
             run_dir=args.run_dir
+
         )
         evaluator.seed = args.seed
 

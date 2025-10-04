@@ -2,7 +2,7 @@ from copy import deepcopy
 import torch
 import numpy as np
 
-from DeFeSyn.models.tab_ddpm.scripts.utils_train import update_ema
+from DeFeSyn.training_framework.models.tab_ddpm.scripts.utils_train import update_ema
 import pandas as pd
 
 class Trainer:

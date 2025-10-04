@@ -15,7 +15,7 @@ import numpy as np
 import torch
 
 from DeFeSyn.data.DataLoader import DatasetLoader
-from DeFeSyn.utils.io import load_model_pickle
+from DeFeSyn.io.io import load_model_pickle
 from FEST.privacy_utility_framework.build.lib.privacy_utility_framework.metrics.privacy_metrics.privacy_metric_manager import \
     PrivacyMetricManager
 from FEST.privacy_utility_framework.build.lib.privacy_utility_framework.metrics.utility_metrics.utility_metric_manager import \
@@ -705,7 +705,6 @@ def main(argv=None) -> int:
             link_b=link_b,
             control_frac=args.control_frac
         )
-
     elif args.iter_eval:
         # Per agent evaluation
         agents = get_agents(Path(args.run_path))
@@ -728,7 +727,7 @@ def main(argv=None) -> int:
                 if not match:
                     continue
                 it = int(match.group(1))
-                if it % 100 != 0:
+                if it % 400 != 0:
                     continue
                 out_dir = agent_dir / f"results_iter_{it:04d}"
                 print(f"Evaluating {agent} at iteration {it}...")
@@ -818,7 +817,7 @@ if __name__ == "__main__":
                     sys.argv[0],
                     "--manifest-path", "C:/Users/trist/OneDrive/Dokumente/UZH/BA/05_Data/adult/manifest.yaml",
                     "--run-path", str(subdir),
-                    "--model-path", "iter-00500-model.pkl",
+                    "--model-path", 'C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/runs/baseline_ctgan/ctgan_adult_default.pkl',
                     "--output-path", str(subdir / "evaluation"),
                     "--original-name", "adult",
                     "--synthetic-name", "CTGAN",
@@ -831,6 +830,7 @@ if __name__ == "__main__":
                     "--link-a", "age,education,marital-status,occupation",
                     "--link-b", "race,sex,relationship",
                     "--control-frac", "0.3",
+                    "--iter-eval",
                 ]
                 main()
 

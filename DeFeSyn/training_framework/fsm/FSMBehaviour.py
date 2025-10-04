@@ -10,13 +10,13 @@ import random
 from typing import Optional, Iterable, Dict, Any
 
 import gc, psutil, torch
-from spade.behaviour import FSMBehaviour, State, OneShotBehaviour
+from spade.behaviour import FSMBehaviour, State
 from spade.message import Message
 from spade.template import Template
 
-from DeFeSyn.models.models import CTGANModel, Model, TabDDPMModel
-from DeFeSyn.spade.ReceiveBehaviour import WaitResponse
-from DeFeSyn.utils.io import make_path, save_weights_pt, save_model_pickle
+from DeFeSyn.training_framework.models import CTGANModel, Model, TabDDPMModel
+from DeFeSyn.spade.communication.ReceiveBehaviour import WaitResponse
+from DeFeSyn.io.io import make_path, save_weights_pt, save_model_pickle
 
 # ----------------------------
 # Constants / Types

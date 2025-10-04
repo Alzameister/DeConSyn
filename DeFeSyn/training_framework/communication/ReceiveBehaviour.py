@@ -1,16 +1,13 @@
 import asyncio
 import contextlib
-import json
 import time
 import uuid
-from asyncio import to_thread
-from collections import OrderedDict
 from typing import Optional
 
 from spade.behaviour import CyclicBehaviour, OneShotBehaviour
 from spade.message import Message
 
-from DeFeSyn.spade.PresenceBehaviour import PresenceBehaviour
+from DeFeSyn.spade.communication.PresenceBehaviour import PresenceBehaviour
 
 
 class ReceiveAckBehaviour(CyclicBehaviour):

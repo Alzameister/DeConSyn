@@ -8,9 +8,9 @@ import spade
 from loguru import logger
 from joblib import parallel_config
 
-from DeFeSyn.data.DataLoader import DatasetLoader
+from DeFeSyn.data.data_loader import DatasetLoader
 from DeFeSyn.logging.logger import init_logging
-from DeFeSyn.training_framework.agent.NodeAgent import NodeAgent, NodeConfig, NodeData
+from DeFeSyn.training_framework.agent.node_agent import NodeAgent, NodeConfig, NodeData
 from DeFeSyn.utils.graph import Graph, agent_jid
 from DeFeSyn.utils.seed import set_global_seed
 

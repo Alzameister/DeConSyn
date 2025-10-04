@@ -9,13 +9,13 @@ from spade.agent import Agent
 from spade.template import Template
 from loguru import logger
 
-from DeFeSyn.training_framework.consensus.Consensus import Consensus
+from DeFeSyn.training_framework.consensus.consensus import Consensus
 from DeFeSyn.training_framework.models.models import Model
-from DeFeSyn.training_framework.fsm.FSMBehaviour import NodeFSMBehaviour, TRAINING_STATE, StartState, TrainingState, \
+from DeFeSyn.training_framework.fsm.fsm_behaviour import NodeFSMBehaviour, TRAINING_STATE, StartState, TrainingState, \
     PullState, PushState, FinalState, START_STATE, PULL_STATE, PUSH_STATE, FINAL_STATE
-from DeFeSyn.training_framework.communication.ReceiveBehaviour import BarrierHelloResponder, BarrierAckRouter, \
+from DeFeSyn.training_framework.communication.receive_behaviour import BarrierHelloResponder, BarrierAckRouter, \
     ReceiveAckBehaviour
-from DeFeSyn.training_framework.communication.PresenceBehaviour import PresenceBehaviour
+from DeFeSyn.training_framework.communication.presence_behaviour import PresenceBehaviour
 from DeFeSyn.io.io import get_repo_root
 
 

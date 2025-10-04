@@ -8,7 +8,7 @@ import torch
 import os
 from torch.utils.data import DataLoader, Dataset
 
-from DeFeSyn.data.DataLoader import DatasetLoader
+from DeFeSyn.data.data_loader import DatasetLoader
 from DeFeSyn.training_framework.models.CTGAN.synthesizers.ctgan import CTGAN
 from DeFeSyn.training_framework.models.tab_ddpm import GaussianMultinomialDiffusion, MLPDiffusion, ResNetDiffusion
 from DeFeSyn.training_framework.models.tab_ddpm.trainer import Trainer

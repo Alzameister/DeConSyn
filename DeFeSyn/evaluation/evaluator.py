@@ -12,7 +12,7 @@ import numpy as np
 import pandas as pd
 import seaborn as sns
 
-from DeFeSyn.data.DataLoader import DatasetLoader
+from DeFeSyn.data.data_loader import DatasetLoader
 from DeFeSyn.io.io import load_model_pickle
 from FEST.privacy_utility_framework.build.lib.privacy_utility_framework.metrics.privacy_metrics.privacy_metric_manager import \
     PrivacyMetricManager

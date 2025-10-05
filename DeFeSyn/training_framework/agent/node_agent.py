@@ -11,8 +11,12 @@ from loguru import logger
 
 from DeFeSyn.training_framework.consensus.consensus import Consensus
 from DeFeSyn.models.models import Model
-from DeFeSyn.training_framework.fsm.fsm_behaviour import NodeFSMBehaviour, TRAINING_STATE, StartState, TrainingState, \
-    PullState, PushState, FinalState, START_STATE, PULL_STATE, PUSH_STATE, FINAL_STATE
+from DeFeSyn.training_framework.fsm.fsm_behaviour import NodeFSMBehaviour, TRAINING_STATE, START_STATE, PULL_STATE, PUSH_STATE, FINAL_STATE
+from DeFeSyn.training_framework.fsm.states.final import FinalState
+from DeFeSyn.training_framework.fsm.states.pull import PullState
+from DeFeSyn.training_framework.fsm.states.push import PushState
+from DeFeSyn.training_framework.fsm.states.train import TrainingState
+from DeFeSyn.training_framework.fsm.states.start import StartState
 from DeFeSyn.training_framework.communication.receive_behaviour import ReceiveBehaviour
 from DeFeSyn.training_framework.communication.barrier_behaviour import BarrierHelloBehaviour, BarrierAckRouter
 from DeFeSyn.training_framework.communication.presence_behaviour import PresenceBehaviour

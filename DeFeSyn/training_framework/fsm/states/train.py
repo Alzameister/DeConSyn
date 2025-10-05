@@ -26,6 +26,9 @@ class TrainingState(BaseState):
             self.set_next_state(FINAL_STATE)
             return
 
+        if self.agent.id == 0:
+            await asyncio.sleep(30.0)
+
         self.log.info("Starting FSM iteration {} → TRAIN", it)
         if torch.cuda.is_available():
             torch.cuda.empty_cache()

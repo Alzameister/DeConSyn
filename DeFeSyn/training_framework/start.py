@@ -24,29 +24,23 @@ set_global_seed(SEED)
 # =========================
 
 async def _shutdown_agents(agents: list[NodeAgent]) -> None:
-    # 1) announce we're going offline
     for a in agents:
         try:
             a.presence.set_unavailable()
         except Exception:
             pass
 
-    # 2) stop all agents
     await asyncio.gather(*[a.stop() for a in agents], return_exceptions=True)
 
-    # 3) let slixmpp flush sockets/file handles
     await asyncio.sleep(0.3)
 
-    # 4) optional: ask SPADE to cleanup globals if available
     try:
-        # older/newer SPADE may or may not have this — safe to try
-        await spade.quit_spade()      # type: ignore[attr-defined]
+        await spade.quit_spade()
     except Exception:
         pass
 
-    # 5) release log file handles (prevents WinError 5 on rerun)
     try:
-        logger.remove()  # remove all sinks; or remove specific sink ids if you track them
+        logger.remove()
     except Exception:
         pass
 
@@ -90,17 +84,6 @@ async def run(
     full_train = loader.get_train()
     full_test  = loader.get_test()
 
-    # Print if training set contains "MISSING" values in column "occupation"
-    if "occupation" in full_train.columns:
-        missing_count = (full_train["occupation"] == "MISSING").sum()
-        logger.info(f"Training set contains {missing_count} 'MISSING' values in 'occupation' column.")
-    if "workclass" in full_train.columns:
-        missing_count = (full_train["workclass"] == "MISSING").sum()
-        logger.info(f"Training set contains {missing_count} 'MISSING' values in 'workclass' column.")
-    if "native-country" in full_train.columns:
-        missing_count = (full_train["native-country"] == "MISSING").sum()
-        logger.info(f"Training set contains {missing_count} 'MISSING' values in 'native-country' column.")
-
     data_dir, manifest_name = loader.split(nr_agents, save_path=f"{data_root}/{nr_agents}")
     split_loader = DatasetLoader(manifest_path=f"{data_dir}/{manifest_name}")
 
@@ -141,6 +124,13 @@ async def run(
             await asyncio.gather(*[a.start(auto_register=True) for a in agents])
             logger.info(f"{nr_agents} agents started (epochs={epochs}, iters={max_iterations}, alpha={alpha}).")
 
+            while True:
+                await asyncio.sleep(2)
+                if all(a.is_final for a in agents):
+                    for a in agents:
+                        a.fsm_done.set()
+                    break
+
             await asyncio.gather(*[a.fsm_done.wait() for a in agents])
             logger.info("All FSMs finished — stopping agents...")
 
@@ -156,9 +146,8 @@ async def run(
 async def cli_async(args: argparse.Namespace) -> int:
     if os.name == "nt":
         with contextlib.suppress(Exception):
-            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())  # type: ignore[attr-defined]
+            asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
 
-    # graceful Ctrl+C
     loop = asyncio.get_event_loop()
     for sig in (signal.SIGINT, signal.SIGTERM):
         with contextlib.suppress(NotImplementedError):
@@ -182,30 +171,6 @@ async def cli_async(args: argparse.Namespace) -> int:
             log_level=args.log_level,
             model_type=args.model_type
         )
-        return 0
-
-    if args.command == "sweep":
-        iterations = _csv_ints(args.iterations_list)
-        for i, e in enumerate(_csv_ints(args.epochs_list)):
-            await asyncio.sleep(5)
-            it = iterations[i]
-            logger.info(f"=== Sweep run: epochs={e}, iterations={it} ===")
-            await run(
-                nr_agents=args.agents,
-                epochs=e,
-                max_iterations=it,
-                alpha=args.alpha,
-                data_root=args.data_root,
-                manifest=args.manifest,
-                topology=args.topology,
-                k=args.k,
-                p=args.p,
-                xmpp_domain=args.xmpp_domain,
-                password=args.password,
-                seed=args.seed,
-                n_jobs=args.n_jobs,
-                log_level=args.log_level,
-            )
         return 0
 
     raise ValueError("Unknown command")

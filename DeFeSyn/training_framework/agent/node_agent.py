@@ -113,6 +113,7 @@ class NodeAgent(Agent):
         self.weights: dict = {}  # latest local weights
         self.loss_values = pd.DataFrame(columns=["Epoch", "Generator Loss", "Discriminator Loss"])
 
+        self.is_final = False
 
     async def setup(self):
         self.log.info("Setting up NodeAgent...")

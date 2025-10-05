@@ -91,8 +91,6 @@ class TrainingState(BaseState):
             return
         self.log.info("TRAIN: warm start → loading weights")
         self.agent.model.set_weights(self.agent.weights)
-        #debug_check_single_weight(self.agent, which="generator")
-        #debug_check_single_weight(self.agent, which="discriminator")
 
     async def _train(self) -> TrainSnapshot:
         t0 = time.perf_counter()

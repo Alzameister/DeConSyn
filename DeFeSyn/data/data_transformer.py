@@ -2,138 +2,74 @@ from pathlib import Path
 import pandas as pd
 
 class DataTransformer:
-    """
-    A versatile transformer that reads datasets in various formats (including UCI-style)
-    and converts them into pandas DataFrames or saves them as CSV files.
+    def __init__(self, data_dir: str):
+        self.data_dir = Path(data_dir).expanduser().resolve()
+        self.columns = self._get_columns()
+        self.train_file = self._find_file(['train.csv', '*.train'])
+        self.test_file = self._find_file(['test.csv', '*.test'])
 
-    Supported formats:
-    - UCI repository style: folder containing .names, .data, and .test files
-    - CSV files
-    - JSON files
-    - Excel files (.xls, .xlsx)
+    def _find_file(self, patterns):
+        for pattern in patterns:
+            files = list(self.data_dir.glob(pattern))
+            if files:
+                return files[0]
+        return None
 
-    Note:
-    - For UCI-style datasets, `transform` returns a dict with keys 'train' and 'test'.
-      If only a .data file exists, 'test' will be None.
-    - `output_csv_dir` is treated as a directory: for single-file sources it writes '<source_name>.csv';
-      for UCI it writes 'train.csv' and 'test.csv'.
-    """
-    def transform(self, source, output_csv_dir=None, format_hint=None):
-        """
-        Read the dataset from `source` and return a pandas DataFrame or a dict of DataFrames.
-        If `output_csv_dir` is provided, it should be a directory path:
-          - For CSV/JSON/Excel, writes a single CSV named '<source_name>.csv'.
-          - For UCI-style, writes 'train.csv' and 'test.csv'.
-        `format_hint` can be one of ['uci', 'csv', 'json', 'excel'] to force a format.
-        """
-        # Handle UCI-style datasets separately
-        if format_hint == 'uci' or self._looks_like_uci(source):
-            dfs = self._read_uci_folder(source)
-            if output_csv_dir:
-                out_folder = Path(output_csv_dir)
-                out_folder.mkdir(parents=True, exist_ok=True)
-                dfs['train'].to_csv(out_folder / 'train.csv', index=False)
-                if dfs['test'] is not None:
-                    dfs['test'].to_csv(out_folder / 'test.csv', index=False)
-            return dfs
+    def _get_columns(self):
+        names_file = next(self.data_dir.glob('*.names'), None)
+        if names_file:
+            columns = []
+            with open(names_file, 'r') as f:
+                for line in f:
+                    line = line.strip()
+                    if not line or line.startswith('|'):
+                        continue
+                    if ':' in line:
+                        name, _ = line.split(':', 1)
+                        columns.append(name.strip())
+            return columns
+        return None
 
-        # Non-UCI datasets: single DataFrame
-        path = Path(source)
-        if format_hint == 'csv' or path.suffix.lower() == '.csv':
-            df = pd.read_csv(path)
-        elif format_hint == 'json' or path.suffix.lower() == '.json':
-            df = pd.read_json(path)
-        elif format_hint == 'excel' or path.suffix.lower() in ['.xls', '.xlsx']:
-            df = pd.read_excel(path)
-        else:
-            raise ValueError(f"Unsupported format for source: {source}")
-
-        if output_csv_dir:
-            out_folder = Path(output_csv_dir)
-            out_folder.mkdir(parents=True, exist_ok=True)
-            filename = path.stem + '.csv'
-            df.to_csv(out_folder / filename, index=False)
-
+    def _clean(self, file_path):
+        df = pd.read_csv(
+            file_path,
+            header=None if self.columns else 'infer',
+            names=self.columns,
+            index_col=False
+        )
+        int_cols = df.select_dtypes(include=["int"]).columns
+        df[int_cols] = df[int_cols].astype("Int64")
+        for col in df.select_dtypes(include='object').columns:
+            df[col] = df[col].str.lstrip()
+        df.replace('?', 'MISSING', inplace=True)
         return df
 
-    def _looks_like_uci(self, folder_path):
-        """
-        Check if folder contains .names and .data files
-        """
-        folder = Path(folder_path)
-        return any(folder.glob('*.names')) and any(folder.glob('*.data'))
+    def get_train(self):
+        if self.train_file is None:
+            raise FileNotFoundError("No train file found.")
+        return self._clean(self.train_file)
 
-    def _parse_names_file(self, names_path):
-        """
-        Parse a UCI .names file to extract ordered column names.
-        """
-        columns = []
-        with open(names_path, 'r') as f:
-            for line in f:
-                line = line.strip()
-                if not line or line.startswith('|'):
-                    continue
-                if ':' in line:
-                    name, _ = line.split(':', 1)
-                    columns.append(name.strip())
-        return columns
+    def get_test(self):
+        if self.test_file is None:
+            raise FileNotFoundError("No test file found.")
+        return self._clean(self.test_file)
 
-    def _read_uci_folder(self, folder_path):
-        """
-        Read UCI-style dataset from a folder and return a dict with 'train' and 'test' DataFrames.
-        Expects files: <dataset>.names, <dataset>.data, optional <dataset>.test
-        """
-        folder = Path(folder_path)
-        # locate .names file
-        names_file = next(folder.glob('*.names'), None)
-        if not names_file:
-            raise FileNotFoundError("No .names file found in UCI folder.")
-        columns = self._parse_names_file(names_file)
+    def save_csv(self, output_dir: str):
+        out_dir = Path(output_dir).expanduser().resolve()
+        out_dir.mkdir(parents=True, exist_ok=True)
 
-        # read .data
-        data_file = next(folder.glob('*.train'), None)
-        if not data_file:
-            raise FileNotFoundError("No .train file found in UCI folder.")
-        df_train = pd.read_csv(
-            data_file,
-            header=None,
-            names=columns,
-            na_values='?',
-            skipinitialspace=True
-        )
-
-        # read .test if present
-        df_test = None
-        test_file = next(folder.glob('*.test'), None)
-        if test_file:
-            df_test = pd.read_csv(
-                test_file,
-                header=None,
-                names=columns,
-                na_values='?',
-                skipinitialspace=True,
-                comment='|'
-            )
-            # drop any empty first row
-            if not df_test.empty and df_test.iloc[0].isnull().all():
-                df_test = df_test.drop(0).reset_index(drop=True)
-
-        # cleanup: convert object columns to category and fill missing
-        MISSING_TOKEN = "MISSING"
-        for df in [df_train] + ([df_test] if df_test is not None else []):
-            for col in df.select_dtypes(include='object').columns:
-                df[col] = df[col].astype('string').fillna(MISSING_TOKEN)
-                df[col] = df[col].astype('category')
-            for col in df.columns:
-                if pd.api.types.is_numeric_dtype(df[col]):
-                    df[col] = df[col].fillna(df[col].median())
-                else:
-                    df[col] = df[col].fillna(df[col].mode().iloc[0])
-
-        return {'train': df_train, 'test': df_test}
+        train_df = self.get_train()
+        train_df.to_csv(out_dir / 'train.csv', index=False)
+        try:
+            test_df = self.get_test()
+            test_df.to_csv(out_dir / 'test.csv', index=False)
+        except FileNotFoundError:
+            pass
 
 if __name__ == "__main__":
-    path = 'C:/Users/trist/OneDrive/Dokumente/UZH/BA/05_Data/adult'
-    transformer = DataTransformer()
-    #df = transformer.transform(path, output_csv_dir='output/dir')
-    uci_dfs = transformer.transform(path, output_csv_dir=path, format_hint='uci')
+    transformer = DataTransformer("../../data/adult")
+    df_train = transformer.get_train()
+    df_test = transformer.get_test()
+    print("Train shape:", df_train.shape)
+    print("Test shape:", df_test.shape if df_test is not None else "No test file found")
+    transformer.save_csv("../../data/adult/csv")

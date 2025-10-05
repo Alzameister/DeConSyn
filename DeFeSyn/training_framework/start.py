@@ -3,15 +3,17 @@ import os
 import argparse
 import contextlib
 import signal
+
 import spade
 
 from loguru import logger
 from joblib import parallel_config
 
 from DeFeSyn.data.data_loader import DatasetLoader
+from DeFeSyn.data.data_transformer import DataTransformer
 from DeFeSyn.logging.logger import init_logging
 from DeFeSyn.training_framework.agent.node_agent import NodeAgent, NodeConfig, NodeData
-from DeFeSyn.utils.graph import Graph, agent_jid
+from DeFeSyn.utils.graph import Graph
 from DeFeSyn.utils.seed import set_global_seed
 
 ADULT_PATH = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/05_Data/adult"
@@ -60,7 +62,7 @@ async def run(
     max_iterations: int,
     alpha: float,
     data_root: str,
-    manifest: str,
+    # manifest: str,
     topology: str,
     xmpp_domain: str,
     password: str,
@@ -80,17 +82,35 @@ async def run(
     set_global_seed(seed)
 
     # prepare data
-    loader = DatasetLoader(manifest_path=f"{data_root}/{manifest}")
-    full_train = loader.get_train()
-    full_test  = loader.get_test()
+    csv_path = data_root + "/csv"
+    transformer = DataTransformer(data_root)
+    transformer.save_csv(csv_path)
+    categorical_columns = [
+        "workclass",
+        "education",
+        "marital-status",
+        "occupation",
+        "relationship",
+        "race",
+        "sex",
+        "native-country",
+        "income"
+    ]
+    logger.info(f"CSV saved to {csv_path}")
 
-    data_dir, manifest_name = loader.split(nr_agents, save_path=f"{data_root}/{nr_agents}")
-    split_loader = DatasetLoader(manifest_path=f"{data_dir}/{manifest_name}")
+    loader = DatasetLoader(csv_path, categorical_columns)
+    full_train = loader.get_train()
+    full_test = loader.get_test()
+    splits = loader.split(nr_agents, seed=seed)
 
     def partition_for(i: int) -> NodeData:
-        train_name = next(n for n in split_loader.resource_names() if "-train" in n and n.endswith(f"part-{i}"))
-        part_train = split_loader.get(train_name)
+        part_train = splits[i]
         return NodeData(part_train=part_train, full_train=full_train, full_test=full_test)
+    logger.info(f"Data loaded from {data_root} and partitioned for {nr_agents} agents.")
+    # Head of partitions
+    for i in range(nr_agents):
+        part = splits[i]
+        logger.info(f"Agent {i} partition: {part.shape}, head:\n{part.head(3)}")
 
     # neighbors
     if topology.lower() == "ring":
@@ -160,7 +180,6 @@ async def cli_async(args: argparse.Namespace) -> int:
             max_iterations=args.iterations,
             alpha=args.alpha,
             data_root=args.data_root,
-            manifest=args.manifest,
             topology=args.topology,
             k=args.k,
             p=args.p,
@@ -184,7 +203,6 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--agents", type=int, default=4, help="Number of agents (default: 4)")
         sp.add_argument("--alpha", type=float, default=1.0, help="ACo-L alpha (default: 1.0)")
         sp.add_argument("--data-root", default=ADULT_PATH, help="Dataset root directory")
-        sp.add_argument("--manifest", default=ADULT_MANIFEST, help="Manifest filename (default: manifest.yaml)")
         sp.add_argument("--topology", choices=["ring", "full", "small-world"], default="ring", help="Neighbor topology")
         sp.add_argument("--k", type=int, default=4, help="Number of nearest neighbors for small-world (default: 4)")
         sp.add_argument("--p", type=float, default=0.1, help="Rewiring probability for small-world (default: 0.1)")

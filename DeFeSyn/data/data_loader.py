@@ -5,6 +5,17 @@ from pprint import pprint
 import pandas as pd
 import yaml
 
+ADULT_CATEGORICAL_COLUMNS = [
+        "workclass",
+        "education",
+        "marital-status",
+        "occupation",
+        "relationship",
+        "race",
+        "sex",
+        "native-country",
+        "income"
+    ]
 
 class DatasetLoader:
     def __init__(self, dataset_dir: str, categorical_cols: list[str] = None):
@@ -85,7 +96,7 @@ if __name__ == "__main__":
         "native-country",
         "income"
     ]
-    simple_loader = SimpleDatasetLoader(dataset_dir="../../data/adult/csv", categorical_cols=categorical_columns)
+    simple_loader = DatasetLoader(dataset_dir="../../data/adult/csv", categorical_cols=categorical_columns)
     df_train = simple_loader.get_train()
     df_test = simple_loader.get_test()
     split = simple_loader.split(n=3)

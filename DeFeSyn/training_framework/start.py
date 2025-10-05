@@ -9,7 +9,7 @@ import spade
 from loguru import logger
 from joblib import parallel_config
 
-from DeFeSyn.data.data_loader import DatasetLoader
+from DeFeSyn.data.data_loader import DatasetLoader, ADULT_CATEGORICAL_COLUMNS
 from DeFeSyn.data.data_transformer import DataTransformer
 from DeFeSyn.logging.logger import init_logging
 from DeFeSyn.training_framework.agent.node_agent import NodeAgent, NodeConfig, NodeData
@@ -85,20 +85,9 @@ async def run(
     csv_path = data_root + "/csv"
     transformer = DataTransformer(data_root)
     transformer.save_csv(csv_path)
-    categorical_columns = [
-        "workclass",
-        "education",
-        "marital-status",
-        "occupation",
-        "relationship",
-        "race",
-        "sex",
-        "native-country",
-        "income"
-    ]
     logger.info(f"CSV saved to {csv_path}")
 
-    loader = DatasetLoader(csv_path, categorical_columns)
+    loader = DatasetLoader(csv_path, ADULT_CATEGORICAL_COLUMNS)
     full_train = loader.get_train()
     full_test = loader.get_test()
     splits = loader.split(nr_agents, seed=seed)

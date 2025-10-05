@@ -1,16 +1,15 @@
-import asyncio
 import contextlib
 import time
 import uuid
 from typing import Optional
 
-from spade.behaviour import CyclicBehaviour, OneShotBehaviour
+from spade.behaviour import CyclicBehaviour
 from spade.message import Message
 
 from DeFeSyn.training_framework.communication.presence_behaviour import PresenceBehaviour
 
 
-class ReceiveAckBehaviour(CyclicBehaviour):
+class ReceiveBehaviour(CyclicBehaviour):
     """Handles inbound gossip messages:"""
     async def _try_encode_weights(self) -> Optional[dict]:
         try:
@@ -94,76 +93,4 @@ class ReceiveAckBehaviour(CyclicBehaviour):
             dropped=False
         ).info("recv")
 
-class WaitResponse(OneShotBehaviour):
-    """Small waiter that only resolves the future when a reply arrives or timeout/peer-offline."""
 
-    def __init__(self, fut, peer_jid: str, poll_interval: float = 1.0, timeout: float = 120.0):
-        super().__init__()
-        self.fut = fut
-        self.peer_jid = peer_jid
-        self.poll_interval = poll_interval
-        self.timeout = timeout
-
-    def _peer_available(self) -> bool:
-        active = getattr(self.agent, "active_neighbors", None)
-        if isinstance(active, set):
-            return self.peer_jid in active
-        contact = self.agent.presence.get_contacts().get(self.peer_jid)
-        return bool(contact and contact.is_available())
-
-    async def run(self):
-        loop = asyncio.get_running_loop()
-        deadline = loop.time() + self.timeout
-
-        if self.timeout == 0:
-            if not self._peer_available():
-                self.agent.log.warning("WaitResponse: peer {} unavailable (immediate)", self.peer_jid)
-                self.fut.set_result(None)
-                return
-            msg = await self.receive(timeout=0)
-            self.fut.set_result(msg)
-            return
-
-        while True:
-            remaining = deadline - loop.time()
-            if remaining <= 0:
-                self.agent.log.warning("WaitResponse: timeout waiting for {}", self.peer_jid)
-                self.fut.set_result(None)
-                return
-
-            msg = await self.receive(timeout=min(self.poll_interval, remaining))
-            if msg:
-                self.fut.set_result(msg)
-                return
-
-
-class BarrierHelloResponder(CyclicBehaviour):
-    """Responds to 'barrier-hello' with 'barrier-ack'."""
-
-    async def run(self):
-        msg = await self.receive(timeout=0.1)
-        if not msg:
-            return
-        token = msg.get_metadata("token") or ""
-        ack = msg.make_reply()
-        ack.set_metadata("performative", "inform")
-        ack.set_metadata("type", "barrier-ack")
-        ack.set_metadata("token", token)
-        await self.send(ack)
-        self.agent.log.debug("HELLO from {} → ACK(token={})", msg.sender, token)
-
-
-class BarrierAckRouter(CyclicBehaviour):
-    """Routes 'barrier-ack' messages to the queue registered for their token."""
-
-    async def run(self):
-        msg = await self.receive(timeout=0.1)
-        if not msg:
-            return
-        token = msg.get_metadata("token") or ""
-        q = self.agent.barrier_queues.get(token)
-        if q:
-            await q.put(PresenceBehaviour.strip_jid(msg.sender))
-            self.agent.log.debug("ACK routed token={} from={}", token, msg.sender)
-        else:
-            self.agent.log.debug("ACK for unknown token={} from={}", token, msg.sender)

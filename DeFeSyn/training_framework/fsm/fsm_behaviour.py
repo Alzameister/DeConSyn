@@ -15,7 +15,7 @@ from spade.message import Message
 from spade.template import Template
 
 from DeFeSyn.models.models import CTGANModel, Model, TabDDPMModel
-from DeFeSyn.training_framework.communication.receive_behaviour import WaitResponse
+from DeFeSyn.training_framework.communication.wait_response_behaviour import WaitResponseBehaviour
 from DeFeSyn.io.io import make_path, save_weights_pt, save_model_pickle
 
 # ----------------------------
@@ -478,7 +478,7 @@ class PullState(BaseState):
             rid, _ = await self._send_gossip_request(neighbor, self.agent.current_iteration, kind="pull")
 
             fut = asyncio.get_running_loop().create_future()
-            waiter = WaitResponse(fut, neighbor, timeout=180.0)
+            waiter = WaitResponseBehaviour(fut, neighbor, timeout=180.0)
             self.agent.add_behaviour(
                 waiter,
                 Template(
@@ -563,7 +563,7 @@ class PushState(BaseState):
         rid, _ver = await self._send_gossip_request(peer, it, kind="push")
 
         fut = asyncio.get_running_loop().create_future()
-        waiter = WaitResponse(fut, peer)
+        waiter = WaitResponseBehaviour(fut, peer)
         self.agent.add_behaviour(
             waiter,
             Template(metadata={"performative": MT_INFORM, "type": T_GOSSIP_WEIGHTS, "rid": rid})

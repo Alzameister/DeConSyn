@@ -13,8 +13,8 @@ from DeFeSyn.training_framework.consensus.consensus import Consensus
 from DeFeSyn.models.models import Model
 from DeFeSyn.training_framework.fsm.fsm_behaviour import NodeFSMBehaviour, TRAINING_STATE, StartState, TrainingState, \
     PullState, PushState, FinalState, START_STATE, PULL_STATE, PUSH_STATE, FINAL_STATE
-from DeFeSyn.training_framework.communication.receive_behaviour import BarrierHelloResponder, BarrierAckRouter, \
-    ReceiveAckBehaviour
+from DeFeSyn.training_framework.communication.receive_behaviour import ReceiveBehaviour
+from DeFeSyn.training_framework.communication.barrier_behaviour import BarrierHelloBehaviour, BarrierAckRouter
 from DeFeSyn.training_framework.communication.presence_behaviour import PresenceBehaviour
 from DeFeSyn.io.io import get_repo_root
 
@@ -119,11 +119,11 @@ class NodeAgent(Agent):
         # 1) Presence (ACo-L): auto-subscribe + track active neighbors + update degree/epsilon
         self.add_behaviour(PresenceBehaviour(poll_secs=2.0))
         self.add_behaviour(
-            ReceiveAckBehaviour(),
+            ReceiveBehaviour(),
             template=Template(metadata={"performative": "inform", "type": "gossip-req"})
         )
         self.add_behaviour(
-            BarrierHelloResponder(),
+            BarrierHelloBehaviour(),
             template=Template(metadata={"performative": "inform", "type": "barrier-hello"})
         )
         self.add_behaviour(

@@ -61,7 +61,12 @@ METRICS_BETTER = {
     'NNDR': 'Higher',
     'AdversarialAccuracy': 'Higher',
     'RepU': 'Lower',
-    'DiSCO': 'Lower'
+    'DiSCO': 'Lower',
+    'Var': "Lower",
+    'Mean': "Lower",
+    'Median': "Lower",
+    'JS': 'Higher',
+    'KS': 'Higher'
 }
 
 def rank_models(df):

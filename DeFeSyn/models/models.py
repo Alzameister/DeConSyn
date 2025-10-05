@@ -8,7 +8,7 @@ import torch
 import os
 from torch.utils.data import DataLoader, Dataset
 
-from DeFeSyn.data.data_loader import DatasetLoader
+from DeFeSyn.data.data_loader import DatasetLoader, ADULT_CATEGORICAL_COLUMNS
 from DeFeSyn.models.CTGAN.synthesizers.ctgan import CTGAN
 from DeFeSyn.models.tab_ddpm import GaussianMultinomialDiffusion, MLPDiffusion, ResNetDiffusion
 from DeFeSyn.models.tab_ddpm.trainer import Trainer
@@ -210,6 +210,26 @@ class CTGANModel(Model):
     def clear_loss_values(self):
         if hasattr(self.model, "loss_values"):
             self.model.loss_values = None
+
+    def fit_baseline(self):
+        self.model = CTGAN(epochs=self.epochs, verbose=True, cuda=self.use_cuda_flag)
+        self.model.fit(
+            full_data=self.full_data,
+            train_data=self.data,
+            discrete_columns=self.discrete_columns,
+            gen_state_dict=self.weights.get("generator"),
+            dis_state_dict=self.weights.get("discriminator"),
+        )
+        self._move_modules()
+        self._refresh_cpu_snapshot()
+
+        # Save model under runs/ctgan_baseline
+
+        root = get_repo_root()
+        path = root / "runs" / "ctgan_baseline"
+        os.makedirs(path, exist_ok=True)
+        model_path = path / "ctgan_adult_baseline.pkl"
+        self.model.save(model_path)
 
 class TabDDPMModel(Model):
     def __init__(
@@ -471,20 +491,16 @@ def discrete_cols_of(df):
     return [c for c in df.columns if getattr(df[c].dtype, "name", "") == "category"]
 
 if __name__ == '__main__':
-    adult = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/05_Data/adult"
-    manifest = "manifest.yaml"
-    loader = DatasetLoader(f"{adult}/{manifest}")
+    loader = DatasetLoader("../../data/adult/csv", ADULT_CATEGORICAL_COLUMNS)
     full_train = loader.get_train()
     full_test = loader.get_test()
-    discrete_columns = discrete_cols_of(full_train)
 
-    model = TabDDPMModel(
+    model = CTGANModel(
         full_data=full_train,
         data=full_train,
-        discrete_columns=discrete_columns,
-        epochs=300,
+        discrete_columns=ADULT_CATEGORICAL_COLUMNS,
+        epochs=10,
         verbose=True,
-        device="cpu",
-        target="income"
+        device="cpu"
     )
     model.fit_baseline()

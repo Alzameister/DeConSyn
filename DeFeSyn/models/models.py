@@ -1,5 +1,7 @@
+import pickle
 import threading
 from abc import ABC, abstractmethod
+from pathlib import Path
 from typing import Any
 
 import numpy as np
@@ -11,7 +13,9 @@ from torch.utils.data import DataLoader, Dataset
 from DeFeSyn.data.data_loader import DatasetLoader, ADULT_CATEGORICAL_COLUMNS
 from DeFeSyn.models.CTGAN.synthesizers.ctgan import CTGAN
 from DeFeSyn.models.tab_ddpm import GaussianMultinomialDiffusion, MLPDiffusion, ResNetDiffusion
-from DeFeSyn.models.tab_ddpm.trainer import Trainer
+from DeFeSyn.models.tab_ddpm.lib.data import Transformations, prepare_fast_dataloader
+from DeFeSyn.models.tab_ddpm.scripts.utils_train import make_dataset
+from DeFeSyn.models.tab_ddpm.trainer import Trainer, train
 from DeFeSyn.io.serialization import encode_state_dict_pair_blob, decode_state_dict_pair_blob
 from DeFeSyn.io.snapshots import snapshot_state_dict_pair
 from DeFeSyn.io.io import get_repo_root
@@ -238,97 +242,163 @@ class TabDDPMModel(Model):
             data,
             discrete_columns,
             epochs: int,
+            real_data_path: str,
+            real_full_data_path: str,
+            parent_dir: str,
             verbose: bool = True,
             device: str = "cpu",
             target: str = "income"
+
     ):
         super().__init__(full_data, data, device)
-
-        self.epochs = int(epochs)
-        self.verbose = bool(verbose)
-
-        self.discrete_columns = [c for c in discrete_columns if c != target]
-        self.numerical_columns = [c for c in full_data.columns if c not in discrete_columns and c != target]
+        self.discrete_columns = discrete_columns
+        self.epochs = epochs
         self.target = target
-        self._align_data()
+        self.verbose = verbose
 
-        self.column_names = self.full_data.columns.tolist()
-        self.num_classes = self._get_num_classes()
-        self.y_classes = self._get_y_classes()
-        self.y_dist = self._get_y_dist()
-        self.num_numerical_features = self.full_data.shape[1] - len(self.discrete_columns) - 1
-        self.category_mappings = {
-            col: self.full_data[col].cat.categories
-            for col in self.discrete_columns + ([self.target] if self.target else [])
-            if pd.api.types.is_categorical_dtype(self.full_data[col])
+        model_type = "mlp"
+        seed = 0
+
+        model_params = {
+            "num_classes": 2,
+            "is_y_cond": True,
+            "rtdl_params": {
+                "d_layers": [1024, 512],
+                "dropout": 0.0
+            }
         }
 
-        # TODO: For now adult only config copied, make it configurable by input
-        self.lr = 0.001809824563637657
-        self.weight_decay = 0.0
-        # TODO: Adjust stepszie, now used 100 --> 300 Rounds * 100 = 30'000 (as baseline) + 200 rounds extra for safety
-        self.steps = 100
-        self.batch_size = 4096
-        rtdl_params = {
-            "d_layers": [1024, 512],
-            "dropout":0.0
+        diffusion_params = {
+            "num_timesteps": 1000,
+            "gaussian_loss_type": "mse"
         }
-        d_in = np.sum(self.num_classes) + self.num_numerical_features
 
+        train_main = {
+            "steps": 50,
+            "lr": 0.001809824563637657,
+            "weight_decay": 0.0,
+            "batch_size": 4096
+        }
+
+        T_dict = {
+            "seed": 0,
+            "normalization": "quantile",
+            "num_nan_policy": None,
+            "cat_nan_policy": None,
+            "cat_min_frequency": None,
+            "cat_encoding": None,
+            "y_policy": "default"
+        }
+
+        real_data_path = os.path.normpath(real_data_path)
+        parent_dir = os.path.normpath(parent_dir)
+
+        T = Transformations(**T_dict)
+
+        cache_dir =( Path(parent_dir) / 'transformers').resolve()
+        cache_dir.mkdir(parents=True, exist_ok=True)
+
+        full_dataset = make_dataset(
+            real_full_data_path,
+            T,
+            num_classes=model_params['num_classes'],
+            is_y_cond=model_params['is_y_cond'],
+            change_val=False,
+            cache_dir=cache_dir
+        )
+
+        # Save dataset
+        full_dataset_path = Path(parent_dir) / 'full_dataset.pkl'
+        with open(full_dataset_path, 'wb') as f:
+            pickle.dump(full_dataset, f)
+
+        self.dataset = make_dataset(
+            real_data_path,
+            T,
+            num_classes=model_params['num_classes'],
+            is_y_cond=model_params['is_y_cond'],
+            change_val=False,
+            cache_dir=cache_dir
+        )
+
+        K = np.array(self.dataset.get_category_sizes('train'))
+        if len(K) == 0 or T_dict['cat_encoding'] == 'one-hot':
+            K = np.array([0])
+        print(K)
+
+        num_numerical_features = self.dataset.X_num['train'].shape[1] if self.dataset.X_num is not None else 0
+        d_in = np.sum(K) + num_numerical_features
+        model_params['d_in'] = d_in
+        print(d_in)
+
+        print(model_params)
         self.model = get_model(
-            model_name="mlp",
-            model_params={
-                "num_classes": 2,
-                "is_y_cond": True,
-                "d_in": d_in,
-                "rtdl_params": rtdl_params
-            },
-            n_num_features=self.num_numerical_features,
-            category_sizes=self.num_classes
+            model_type,
+            model_params,
+            num_numerical_features,
+            category_sizes=self.dataset.get_category_sizes('train')
         )
-        self.model.to(self.device)
+        self.model.to(device)
 
+        train_loader = prepare_fast_dataloader(self.dataset, split='train', batch_size=train_main['batch_size'])
         self.diffusion = GaussianMultinomialDiffusion(
-            num_classes=self.num_classes,
-            num_numerical_features=self.num_numerical_features,
-            y_dist=self.y_dist,
-            column_names=self.column_names,
-            category_mappings=self.category_mappings,
+            num_classes=K,
+            num_numerical_features=num_numerical_features,
             denoise_fn=self.model,
-            gaussian_loss_type="mse",
-            num_timesteps=1000,
+            gaussian_loss_type=diffusion_params['gaussian_loss_type'],
+            num_timesteps=diffusion_params['num_timesteps'],
             scheduler="cosine",
-            device=self.device
+            device=device
         )
-        self.diffusion.to(self.device)
-        self.loss_values = None
+        self.diffusion.to(device)
+        self.diffusion.train()
+
+        self.trainer = Trainer(
+            self.diffusion,
+            train_loader,
+            lr=train_main['lr'],
+            weight_decay=train_main['weight_decay'],
+            steps=train_main['steps'],
+            device=device
+        )
 
         self._weights_lock = threading.RLock()
         self._cpu_weights: dict[str, torch.Tensor] | None = None
 
     def fit(self):
-        self.diffusion.train()
-        train_iter = self._get_train_iter()
-        trainer = Trainer(
-            diffusion=self.diffusion,
-            train_iter=train_iter,
-            lr=self.lr,
-            weight_decay=self.weight_decay,
-            steps=self.steps,
-            device=self.device
-        )
-        trainer.run_loop()
-        self.loss_values = trainer.loss_history
+        self.trainer.run_loop()
+        self.loss_values = self.trainer.loss_history
         self._refresh_cpu_snapshot()
 
     def sample(self, num_samples: int, seed: int = 42):
-        if not self.y_dist:
-            self.y_dist = self._get_y_dist()
+        #if not self.y_dist:
+        #    self.y_dist = self._get_y_dist()
         torch.manual_seed(seed)
         self.diffusion.eval()
+        self.y_dist = self._get_y_dist()
         with torch.no_grad():
-            samples = self.diffusion.sample(num_samples, self.y_dist)
-            return samples
+            x, y = self.diffusion.sample(num_samples, self.y_dist)
+            return self.postprocess_sample(x, y)
+
+    def postprocess_sample(self, X_gen, y_gen):
+        # Split into numerical and categorical features
+        num_features = self.num_numerical_features
+        X_num = X_gen[:, :num_features]
+        X_cat = X_gen[:, num_features:]
+
+        # Inverse transform numerical features
+        X_num_inv = self.dataset.num_transform.inverse_transform(X_num)
+
+        # Inverse transform categorical features
+        X_cat_inv = self.dataset.cat_transform.inverse_transform(X_cat)
+
+        y = y_gen['y']
+        y_inv = self.dataset.y_transform.inverse_transform(y.reshape(-1, 1))
+        y_inv = y_inv.squeeze(1)
+
+        # Combine back if needed
+        X_final = np.hstack([X_num_inv, X_cat_inv])
+        return X_final, y_inv
 
     def is_trained(self) -> bool:
         return self._cpu_weights is not None
@@ -406,38 +476,62 @@ class TabDDPMModel(Model):
         self.full_data = self.full_data[ordered_columns]
         self.data = self.data[ordered_columns]
 
-    def fit_baseline(self):
-        self.steps = 30_000
+    def fit_baseline(self, parent_dir, real_data_path, full_real_data_path):
+        model_type = "mlp"
+        seed = 0
+        device = "cpu"
 
-        self.diffusion = GaussianMultinomialDiffusion(
-            num_classes=self.num_classes,
-            num_numerical_features=self.num_numerical_features,
-            y_dist=self.y_dist,
-            column_names=self.column_names,
-            category_mappings=self.category_mappings,
-            denoise_fn=self.model,
-            gaussian_loss_type="mse",
-            num_timesteps=1000,
+        model_params = {
+            "num_classes": 2,
+            "is_y_cond": True,
+            "rtdl_params": {
+                "d_layers": [1024, 512],
+                "dropout": 0.0
+            }
+        }
+
+        diffusion_params = {
+            "num_timesteps": 1000,
+            "gaussian_loss_type": "mse"
+        }
+
+        train_main = {
+            "steps": 10,
+            "lr": 0.001809824563637657,
+            "weight_decay": 0.0,
+            "batch_size": 4096
+        }
+
+        T_dict = {
+            "seed": 0,
+            "normalization": "quantile",
+            "num_nan_policy": None,
+            "cat_nan_policy": None,
+            "cat_min_frequency": None,
+            "cat_encoding": None,
+            "y_policy": "default"
+        }
+
+        self.dataset = train(
+            parent_dir=parent_dir,
+            real_data_path=real_data_path,
+            steps=train_main["steps"],
+            lr=train_main["lr"],
+            weight_decay=train_main["weight_decay"],
+            batch_size=train_main["batch_size"],
+            model_type=model_type,
+            model_params=model_params,
+            num_timesteps=diffusion_params["num_timesteps"],
+            gaussian_loss_type=diffusion_params["gaussian_loss_type"],
             scheduler="cosine",
-            device=self.device
+            T_dict=T_dict,
+            num_numerical_features=6,
+            device=device,
+            seed=seed,
+            change_val=False
         )
-        self.diffusion.to(self.device)
-        self.diffusion.train()
-        train_iter = self._get_train_iter()
-        trainer = Trainer(
-            diffusion=self.diffusion,
-            train_iter=train_iter,
-            lr=self.lr,
-            weight_decay=self.weight_decay,
-            steps=self.steps,
-            device=self.device
-        )
-        trainer.run_loop()
-        self.loss_values = trainer.loss_history
-        self._refresh_cpu_snapshot()
 
         # Save model under runs/tabddpm_baseline
-
         root = get_repo_root()
         path = root / "runs" / "tabddpm" / "tabddpm_baseline"
         os.makedirs(path, exist_ok=True)
@@ -494,13 +588,20 @@ if __name__ == '__main__':
     loader = DatasetLoader("../../data/adult/csv", ADULT_CATEGORICAL_COLUMNS)
     full_train = loader.get_train()
     full_test = loader.get_test()
+    data_dir = "../../runs/tabddpm/tabddpm_baseline"
+    real_data_path = "../../data/adult/npy"
 
-    model = CTGANModel(
+    model = TabDDPMModel(
         full_data=full_train,
         data=full_train,
         discrete_columns=ADULT_CATEGORICAL_COLUMNS,
         epochs=10,
         verbose=True,
-        device="cpu"
+        device="cpu",
+        target="income",
+        parent_dir=data_dir,
+        real_data_path=real_data_path
     )
-    model.fit_baseline()
+    model.fit_baseline(data_dir, real_data_path)
+
+    samples = model.sample(1000, seed=42)

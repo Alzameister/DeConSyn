@@ -13,9 +13,10 @@ ADULT_CATEGORICAL_COLUMNS = [
         "relationship",
         "race",
         "sex",
-        "native-country",
-        "income"
-    ]
+        "native-country"
+]
+
+ADULT_TARGET = "income"
 
 class DatasetLoader:
     def __init__(self, dataset_dir: str, categorical_cols: list[str] = None):

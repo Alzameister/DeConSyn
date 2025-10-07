@@ -13,9 +13,11 @@ from torch import Tensor
 
 ModuleType = Union[str, Callable[..., nn.Module]]
 
+
 class SiLU(nn.Module):
     def forward(self, x):
         return x * torch.sigmoid(x)
+
 
 def timestep_embedding(timesteps, dim, max_period=10000):
     """
@@ -37,16 +39,18 @@ def timestep_embedding(timesteps, dim, max_period=10000):
         embedding = torch.cat([embedding, torch.zeros_like(embedding[:, :1])], dim=-1)
     return embedding
 
+
 def _is_glu_activation(activation: ModuleType):
     return (
-        isinstance(activation, str)
-        and activation.endswith('GLU')
-        or activation in [ReGLU, GEGLU]
+            isinstance(activation, str)
+            and activation.endswith('GLU')
+            or activation in [ReGLU, GEGLU]
     )
 
 
 def _all_or_none(values):
     assert all(x is None for x in values) or all(x is not None for x in values)
+
 
 def reglu(x: Tensor) -> Tensor:
     """The ReGLU activation function from [1].
@@ -66,6 +70,7 @@ def geglu(x: Tensor) -> Tensor:
     assert x.shape[-1] % 2 == 0
     a, b = x.chunk(2, dim=-1)
     return a * F.gelu(b)
+
 
 class ReGLU(nn.Module):
     """The ReGLU activation function from [shazeer2020glu].
@@ -101,6 +106,7 @@ class GEGLU(nn.Module):
 
     def forward(self, x: Tensor) -> Tensor:
         return geglu(x)
+
 
 def _make_nn_module(module_type: ModuleType, *args) -> nn.Module:
     return (
@@ -141,13 +147,13 @@ class MLP(nn.Module):
         """The main building block of `MLP`."""
 
         def __init__(
-            self,
-            *,
-            d_in: int,
-            d_out: int,
-            bias: bool,
-            activation: ModuleType,
-            dropout: float,
+                self,
+                *,
+                d_in: int,
+                d_out: int,
+                bias: bool,
+                activation: ModuleType,
+                dropout: float,
         ) -> None:
             super().__init__()
             self.linear = nn.Linear(d_in, d_out, bias)
@@ -158,13 +164,13 @@ class MLP(nn.Module):
             return self.dropout(self.activation(self.linear(x)))
 
     def __init__(
-        self,
-        *,
-        d_in: int,
-        d_layers: List[int],
-        dropouts: Union[float, List[float]],
-        activation: Union[str, Callable[[], nn.Module]],
-        d_out: int,
+            self,
+            *,
+            d_in: int,
+            d_layers: List[int],
+            dropouts: Union[float, List[float]],
+            activation: Union[str, Callable[[], nn.Module]],
+            d_out: int,
     ) -> None:
         """
         Note:
@@ -192,11 +198,11 @@ class MLP(nn.Module):
 
     @classmethod
     def make_baseline(
-        cls: Type['MLP'],
-        d_in: int,
-        d_layers: List[int],
-        dropout: float,
-        d_out: int,
+            cls: Type['MLP'],
+            d_in: int,
+            d_layers: List[int],
+            dropout: float,
+            d_out: int,
     ) -> 'MLP':
         """Create a "baseline" `MLP`.
 
@@ -273,17 +279,17 @@ class ResNet(nn.Module):
         """The main building block of `ResNet`."""
 
         def __init__(
-            self,
-            *,
-            d_main: int,
-            d_hidden: int,
-            bias_first: bool,
-            bias_second: bool,
-            dropout_first: float,
-            dropout_second: float,
-            normalization: ModuleType,
-            activation: ModuleType,
-            skip_connection: bool,
+                self,
+                *,
+                d_main: int,
+                d_hidden: int,
+                bias_first: bool,
+                bias_second: bool,
+                dropout_first: float,
+                dropout_second: float,
+                normalization: ModuleType,
+                activation: ModuleType,
+                skip_connection: bool,
         ) -> None:
             super().__init__()
             self.normalization = _make_nn_module(normalization, d_main)
@@ -310,13 +316,13 @@ class ResNet(nn.Module):
         """The final module of `ResNet`."""
 
         def __init__(
-            self,
-            *,
-            d_in: int,
-            d_out: int,
-            bias: bool,
-            normalization: ModuleType,
-            activation: ModuleType,
+                self,
+                *,
+                d_in: int,
+                d_out: int,
+                bias: bool,
+                normalization: ModuleType,
+                activation: ModuleType,
         ) -> None:
             super().__init__()
             self.normalization = _make_nn_module(normalization, d_in)
@@ -331,17 +337,17 @@ class ResNet(nn.Module):
             return x
 
     def __init__(
-        self,
-        *,
-        d_in: int,
-        n_blocks: int,
-        d_main: int,
-        d_hidden: int,
-        dropout_first: float,
-        dropout_second: float,
-        normalization: ModuleType,
-        activation: ModuleType,
-        d_out: int,
+            self,
+            *,
+            d_in: int,
+            n_blocks: int,
+            d_main: int,
+            d_hidden: int,
+            dropout_first: float,
+            dropout_second: float,
+            normalization: ModuleType,
+            activation: ModuleType,
+            d_out: int,
     ) -> None:
         """
         Note:
@@ -378,15 +384,15 @@ class ResNet(nn.Module):
 
     @classmethod
     def make_baseline(
-        cls: Type['ResNet'],
-        *,
-        d_in: int,
-        n_blocks: int,
-        d_main: int,
-        d_hidden: int,
-        dropout_first: float,
-        dropout_second: float,
-        d_out: int,
+            cls: Type['ResNet'],
+            *,
+            d_in: int,
+            n_blocks: int,
+            d_main: int,
+            d_hidden: int,
+            dropout_first: float,
+            dropout_second: float,
+            d_out: int,
     ) -> 'ResNet':
         """Create a "baseline" `ResNet`.
         This variation of ResNet was used in [gorishniy2021revisiting]. Features:
@@ -420,10 +426,12 @@ class ResNet(nn.Module):
         x = self.blocks(x)
         x = self.head(x)
         return x
-#### For diffusion 
+
+
+#### For diffusion
 
 class MLPDiffusion(nn.Module):
-    def __init__(self, d_in, num_classes, is_y_cond, rtdl_params, dim_t = 128):
+    def __init__(self, d_in, num_classes, is_y_cond, rtdl_params, dim_t=128):
         super().__init__()
         self.dim_t = dim_t
         self.num_classes = num_classes
@@ -440,14 +448,14 @@ class MLPDiffusion(nn.Module):
             self.label_emb = nn.Embedding(self.num_classes, dim_t)
         elif self.num_classes == 0 and is_y_cond:
             self.label_emb = nn.Linear(1, dim_t)
-        
+
         self.proj = nn.Linear(d_in, dim_t)
         self.time_embed = nn.Sequential(
             nn.Linear(dim_t, dim_t),
             nn.SiLU(),
             nn.Linear(dim_t, dim_t)
         )
-    
+
     def forward(self, x, timesteps, y=None):
         emb = self.time_embed(timestep_embedding(timesteps, self.dim_t))
         if self.is_y_cond and y is not None:
@@ -459,8 +467,9 @@ class MLPDiffusion(nn.Module):
         x = self.proj(x) + emb
         return self.mlp(x)
 
+
 class ResNetDiffusion(nn.Module):
-    def __init__(self, d_in, num_classes, rtdl_params, dim_t = 256):
+    def __init__(self, d_in, num_classes, rtdl_params, dim_t=256):
         super().__init__()
         self.dim_t = dim_t
         self.num_classes = num_classes
@@ -472,13 +481,13 @@ class ResNetDiffusion(nn.Module):
 
         if self.num_classes > 0:
             self.label_emb = nn.Embedding(self.num_classes, dim_t)
-        
+
         self.time_embed = nn.Sequential(
             nn.Linear(dim_t, dim_t),
             nn.SiLU(),
             nn.Linear(dim_t, dim_t)
         )
-    
+
     def forward(self, x, timesteps, y=None):
         emb = self.time_embed(timestep_embedding(timesteps, self.dim_t))
         if y is not None and self.num_classes > 0:

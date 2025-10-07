@@ -4,6 +4,7 @@ import torch.nn.functional as F
 from torch.profiler import record_function
 from inspect import isfunction
 
+
 def normal_kl(mean1, logvar1, mean2, logvar2):
     """
     Compute the KL divergence between two gaussians.
@@ -26,12 +27,13 @@ def normal_kl(mean1, logvar1, mean2, logvar2):
     ]
 
     return 0.5 * (
-        -1.0
-        + logvar2
-        - logvar1
-        + torch.exp(logvar1 - logvar2)
-        + ((mean1 - mean2) ** 2) * torch.exp(-logvar2)
+            -1.0
+            + logvar2
+            - logvar1
+            + torch.exp(logvar1 - logvar2)
+            + ((mean1 - mean2) ** 2) * torch.exp(-logvar2)
     )
+
 
 def approx_standard_normal_cdf(x):
     """
@@ -70,6 +72,7 @@ def discretized_gaussian_log_likelihood(x, *, means, log_scales):
     assert log_probs.shape == x.shape
     return log_probs
 
+
 def sum_except_batch(x, num_dims=1):
     '''
     Sums all dimensions except the first.
@@ -83,19 +86,22 @@ def sum_except_batch(x, num_dims=1):
     '''
     return x.reshape(*x.shape[:num_dims], -1).sum(-1)
 
+
 def mean_flat(tensor):
     """
     Take the mean over all non-batch dimensions.
     """
     return tensor.mean(dim=list(range(1, len(tensor.shape))))
 
+
 def ohe_to_categories(ohe, K):
     K = torch.from_numpy(K)
     indices = torch.cat([torch.zeros((1,)), K.cumsum(dim=0)], dim=0).int().tolist()
     res = []
     for i in range(len(indices) - 1):
-        res.append(ohe[:, indices[i]:indices[i+1]].argmax(dim=1))
+        res.append(ohe[:, indices[i]:indices[i + 1]].argmax(dim=1))
     return torch.stack(res, dim=1)
+
 
 def log_1_min_a(a):
     return torch.log(1 - a.exp() + 1e-40)
@@ -105,8 +111,10 @@ def log_add_exp(a, b):
     maximum = torch.max(a, b)
     return maximum + torch.log(torch.exp(a - maximum) + torch.exp(b - maximum))
 
+
 def exists(x):
     return x is not None
+
 
 def extract(a, t, x_shape):
     b, *_ = t.shape
@@ -116,22 +124,26 @@ def extract(a, t, x_shape):
         out = out[..., None]
     return out.expand(x_shape)
 
+
 def default(val, d):
     if exists(val):
         return val
     return d() if isfunction(d) else d
 
+
 def log_categorical(log_x_start, log_prob):
     return (log_x_start.exp() * log_prob).sum(dim=1)
+
 
 def index_to_log_onehot(x, num_classes):
     onehots = []
     for i in range(len(num_classes)):
         onehots.append(F.one_hot(x[:, i], num_classes[i]))
- 
+
     x_onehot = torch.cat(onehots, dim=1)
     log_onehot = torch.log(x_onehot.float().clamp(min=1e-30))
     return log_onehot
+
 
 def log_sum_exp_by_classes(x, slices):
     device = x.device
@@ -143,10 +155,12 @@ def log_sum_exp_by_classes(x, slices):
 
     return res
 
+
 @torch.jit.script
 def log_sub_exp(a: torch.Tensor, b: torch.Tensor) -> torch.Tensor:
     m = torch.maximum(a, b)
     return torch.log(torch.exp(a - m) - torch.exp(b - m)) + m
+
 
 @torch.jit.script
 def sliced_logsumexp(x, slices):
@@ -160,15 +174,18 @@ def sliced_logsumexp(x, slices):
     slice_lse = log_sub_exp(lse[:, slice_ends], lse[:, slice_starts])
     slice_lse_repeated = torch.repeat_interleave(
         slice_lse,
-        slice_ends - slice_starts, 
+        slice_ends - slice_starts,
         dim=-1
     )
     return slice_lse_repeated
 
+
 def log_onehot_to_index(log_x):
     return log_x.argmax(1)
 
+
 class FoundNANsError(BaseException):
     """Found NANs during sampling"""
+
     def __init__(self, message='Found NANs during sampling.'):
         super(FoundNANsError, self).__init__(message)

@@ -26,9 +26,6 @@ class TrainingState(BaseState):
             self.set_next_state(FINAL_STATE)
             return
 
-        if self.agent.id == 0:
-            await asyncio.sleep(30.0)
-
         self.log.info("Starting FSM iteration {} → TRAIN", it)
         if torch.cuda.is_available():
             torch.cuda.empty_cache()
@@ -65,14 +62,21 @@ class TrainingState(BaseState):
         self.agent.log.info("TRAIN: init Model (epochs={}, device={}, discrete={})",
                             self._epochs, self.agent.device, dcols)
         if self.agent.model_type.lower() == "tabddpm":
-            self.agent.model: Model = TabDDPMModel(
-                full_data=full_train,
-                data=part_train,
-                discrete_columns=dcols,
-                epochs=self._epochs,
-                verbose=True,
-                device=self.agent.device,
-            )
+            try:
+                self.agent.model: Model = TabDDPMModel(
+                    full_data=full_train,
+                    data=part_train,
+                    discrete_columns=dcols,
+                    epochs=self._epochs,
+                    verbose=True,
+                    device=self.agent.device,
+                    real_data_path=self.agent.real_data_path,
+                    real_full_data_path=self.agent.real_full_data_path,
+                    parent_dir=self.agent.parent_dir,
+                    target=self.agent.target
+                )
+            except Exception as e:
+                raise e
         elif self.agent.model_type.lower() == "ctgan":
             self.agent.model: Model = CTGANModel(
                 full_data=full_train,

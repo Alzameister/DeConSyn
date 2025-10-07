@@ -3,13 +3,14 @@ import os
 import argparse
 import contextlib
 import signal
+from pathlib import Path
 
 import spade
 
 from loguru import logger
 from joblib import parallel_config
 
-from DeFeSyn.data.data_loader import DatasetLoader, ADULT_CATEGORICAL_COLUMNS
+from DeFeSyn.data.data_loader import DatasetLoader, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET
 from DeFeSyn.data.data_transformer import DataTransformer
 from DeFeSyn.logging.logger import init_logging
 from DeFeSyn.training_framework.agent.node_agent import NodeAgent, NodeConfig, NodeData
@@ -83,8 +84,10 @@ async def run(
 
     # prepare data
     csv_path = data_root + "/csv"
-    transformer = DataTransformer(data_root)
-    transformer.save_csv(csv_path)
+    transformer = DataTransformer(data_root, ADULT_TARGET, ADULT_CATEGORICAL_COLUMNS)
+    transformer.save_csv(Path(csv_path))
+    npy_path = data_root + "/npy"
+
     logger.info(f"CSV saved to {csv_path}")
 
     loader = DatasetLoader(csv_path, ADULT_CATEGORICAL_COLUMNS)
@@ -99,6 +102,13 @@ async def run(
     # Head of partitions
     for i in range(nr_agents):
         part = splits[i]
+        transformer.save_split_npy(
+            part,
+            Path(npy_path) / "splits" / str(nr_agents),
+            i,
+            ADULT_CATEGORICAL_COLUMNS,
+            ADULT_TARGET
+        )
         logger.info(f"Agent {i} partition: {part.shape}, head:\n{part.head(3)}")
 
     # neighbors
@@ -115,6 +125,7 @@ async def run(
     agents: list[NodeAgent] = []
     try:
         for i in range(nr_agents):
+            parent_dir = f"../../runs/{run_id}"
             cfg = NodeConfig(
                 jid=f"agent{i}@{xmpp_domain}",
                 id=i,
@@ -123,7 +134,11 @@ async def run(
                 max_iterations=max_iterations,
                 alpha=alpha,
                 run_id=run_id,
-                model_type=model_type
+                model_type=model_type,
+                real_data_path=npy_path + f"/splits/{nr_agents}/split_{i}" ,
+                real_full_data_path=npy_path,
+                parent_dir=parent_dir + f"/agent_0{i}", # TODO: Correct formatting
+                target=ADULT_TARGET
             )
             data = partition_for(i)
             a = NodeAgent(cfg=cfg, data=data, neighbors=neighbors_map[cfg.jid])

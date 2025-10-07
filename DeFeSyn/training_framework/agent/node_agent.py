@@ -33,7 +33,11 @@ class NodeConfig:
     alpha: float = 0.5
     run_id: str | None = None
     device: str = "auto"
-    model_type: str = "tabddpm"
+    model_type: str = "tabddpm",
+    real_data_path: str | None = None,
+    real_full_data_path: str | None = None,
+    parent_dir: str | None = None,
+    target: str | None = None
 
 @dataclass(frozen=True)
 class NodeData:
@@ -71,6 +75,10 @@ class NodeAgent(Agent):
         self.event = self.log.bind(stream="event")
 
         self.model_type: str = cfg.model_type
+        self.real_data_path = cfg.real_data_path
+        self.real_full_data_path = cfg.real_full_data_path
+        self.parent_dir = cfg.parent_dir
+        self.target = cfg.target
         self.log.info("Using model: {}", self.model_type)
 
         if cfg.device == "auto":

@@ -30,6 +30,9 @@ class DataTransformer:
     def _get_columns(self):
         names_file = next(self.data_dir.glob('*.names'), None)
         if names_file:
+            print(
+                f"Using column names from {names_file}"
+            )
             columns = []
             with open(names_file, 'r') as f:
                 for line in f:

@@ -39,7 +39,8 @@ SCRIPT="$PROJECT_ROOT/DeFeSyn/training_framework/start.py"
 RUNS_DIR="$PROJECT_ROOT/runs"
 LOGS_DIR="$PROJECT_ROOT/logs"
 
-DATA_ROOT="$HOME/data/adult/"
+#DATA_ROOT="$HOME/data/adult/"
+DATA_ROOT="$HOME/FeDeSyn/data/adult"
 MANIFEST="manifest.yaml"
 SEED=42
 N_JOBS=1
@@ -123,7 +124,6 @@ run_once() {
       --iterations "$iterations" \
       --alpha "$ALPHA" \
       --data-root "$DATA_ROOT" \
-      --manifest "$MANIFEST" \
       --topology "$topology" \
       --k "$K" \
       --p "$P" \

@@ -125,7 +125,8 @@ async def run(
     agents: list[NodeAgent] = []
     try:
         for i in range(nr_agents):
-            parent_dir = f"../../runs/{run_id}"
+            PROJECT_ROOT = os.path.join(os.path.expanduser("~"), "FeDeSyn")
+            parent_dir = os.path.join(PROJECT_ROOT, "runs", run_id)
             cfg = NodeConfig(
                 jid=f"agent{i}@{xmpp_domain}",
                 id=i,

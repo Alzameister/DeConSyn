@@ -9,6 +9,7 @@ from DeFeSyn.data.data_loader import ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET
 class DataTransformer:
     def __init__(self, data_dir: str, target: str, cat_cols: list):
         self.data_dir = Path(data_dir).expanduser().resolve()
+        print("Data directory:", self.data_dir)
         self.columns = self._get_columns()
         self.target = target
         # Remove target from cat_cols if present

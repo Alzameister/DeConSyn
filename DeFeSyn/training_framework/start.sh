@@ -129,7 +129,7 @@ run_once() {
       --p "$P" \
       --seed "$SEED" \
       --n-jobs "$N_JOBS" \
-      --log-level "$LOG_LEVEL"
+      --log-level "$LOG_LEVEL" \
       --model-type "$model_type"
   )
 

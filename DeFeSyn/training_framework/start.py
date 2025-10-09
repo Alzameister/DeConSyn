@@ -90,10 +90,10 @@ async def run(
 
     logger.info(f"CSV saved to {csv_path}")
 
-    loader = DatasetLoader(csv_path, ADULT_CATEGORICAL_COLUMNS)
+    loader = DatasetLoader(csv_path, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET)
     full_train = loader.get_train()
     full_test = loader.get_test()
-    splits = loader.split(nr_agents, seed=seed)
+    splits = loader.split_noniid(nr_agents, seed=seed)
 
     def partition_for(i: int) -> NodeData:
         part_train = splits[i]

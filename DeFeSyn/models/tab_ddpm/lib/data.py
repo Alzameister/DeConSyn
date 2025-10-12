@@ -53,6 +53,15 @@ def get_category_sizes(X: Union[torch.Tensor, np.ndarray]) -> List[int]:
     XT = X.T.cpu().tolist() if isinstance(X, torch.Tensor) else X.T.tolist()
     return [len(set(x)) for x in XT]
 
+def get_encoder_sizes(encoder):
+    if encoder is None:
+        return []
+    categories = encoder.categories_
+    if isinstance(categories, list):
+        return [len(c) for c in categories]
+    else:
+        return [len(categories)]
+
 
 @dataclass(frozen=False)
 class Dataset:
@@ -123,7 +132,8 @@ class Dataset:
             return 1
 
     def get_category_sizes(self, part: str) -> List[int]:
-        return [] if self.X_cat is None else get_category_sizes(self.X_cat[part])
+        # return [] if self.X_cat is None else get_category_sizes(self.X_cat[part])
+        return [] if self.X_cat is None else get_encoder_sizes(self.cat_transform.steps[0][1])
 
     def calculate_metrics(
         self,
@@ -274,14 +284,18 @@ def cat_drop_rare(X: ArrayDict, min_frequency: float) -> ArrayDict:
 
 def y_encode(
         y: ArrayDict,
-        encoding: Optional[CatEncoding]
+        encoding: Optional[CatEncoding],
+        y_encoder: Optional = None
 ) -> ArrayDict:
     if encoding is None:
-        oe = sklearn.preprocessing.OrdinalEncoder(
-            handle_unknown='use_encoded_value',  # type: ignore[code]
-            unknown_value=-1,  # type: ignore[code]
-            dtype='int64',  # type: ignore[code]
-        ).fit(y['train'].reshape(-1, 1))
+        if y_encoder is not None:
+            oe = y_encoder
+        else:
+            oe = sklearn.preprocessing.OrdinalEncoder(
+                handle_unknown='use_encoded_value',  # type: ignore[code]
+                unknown_value=-1,  # type: ignore[code]
+                dtype='int64',  # type: ignore[code]
+            ).fit(y['train'].reshape(-1, 1))
         encoder = make_pipeline(oe)
         encoder.fit(y['train'].reshape(-1, 1))
         y = {k: encoder.transform(v.reshape(-1, 1)).astype('int64').squeeze(1) for k, v in y.items()}  # type: ignore[code]
@@ -301,6 +315,7 @@ def cat_encode(
     encoding: Optional[CatEncoding],
     y_train: Optional[np.ndarray],
     seed: Optional[int],
+    cat_encoder: Optional = None,
     return_encoder : bool = False
 ) -> Tuple[ArrayDict, bool, Optional[Any]]:  # (X, is_converted_to_numerical)
     if encoding != 'counter':
@@ -310,13 +325,17 @@ def cat_encode(
 
     if encoding is None:
         unknown_value = np.iinfo('int64').max - 3
-        oe = sklearn.preprocessing.OrdinalEncoder(
-            handle_unknown='use_encoded_value',  # type: ignore[code]
-            unknown_value=unknown_value,  # type: ignore[code]
-            dtype='int64',  # type: ignore[code]
-        ).fit(X['train'])
+        if cat_encoder is not None:
+            oe = cat_encoder
+        else:
+            oe = sklearn.preprocessing.OrdinalEncoder(
+                handle_unknown='use_encoded_value',
+                unknown_value=unknown_value,
+                dtype='int64',
+            )
+            oe.fit(X['train'])
         encoder = make_pipeline(oe)
-        encoder.fit(X['train'])
+        # encoder.fit(X['train'])
         X = {k: encoder.transform(v) for k, v in X.items()}
         max_values = X['train'].max(axis=0)
         for part in X.keys():
@@ -390,6 +409,7 @@ def transform_dataset(
     dataset: Dataset,
     transformations: Transformations,
     cache_dir: Optional[Path],
+    cat_encoder = None,
     return_transforms: bool = False
 ) -> Dataset:
     # WARNING: the order of transformations matters. Moreover, the current
@@ -445,6 +465,7 @@ def transform_dataset(
             transformations.cat_encoding,
             dataset.y['train'],
             transformations.seed,
+            cat_encoder=cat_encoder,
             return_encoder=True
         )
         if is_num:

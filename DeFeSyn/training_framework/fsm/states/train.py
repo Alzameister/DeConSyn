@@ -71,9 +71,8 @@ class TrainingState(BaseState):
                     verbose=True,
                     device=self.agent.device,
                     real_data_path=self.agent.real_data_path,
-                    real_full_data_path=self.agent.real_full_data_path,
-                    parent_dir=self.agent.parent_dir,
-                    target=self.agent.target
+                    target=self.agent.target,
+                    encoder=self.agent.encoder
                 )
             except Exception as e:
                 raise e

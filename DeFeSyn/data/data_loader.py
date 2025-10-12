@@ -2,7 +2,8 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from category_encoders import OneHotEncoder, OrdinalEncoder
+from sklearn.preprocessing import OrdinalEncoder
+
 
 ADULT_CATEGORICAL_COLUMNS = [
         "workclass",
@@ -61,10 +62,8 @@ class DatasetLoader:
         self.numerical_cols = [col for col in self._dataframes['train'].columns
                                if col not in self.categorical_cols and col != self.target]
 
-        self.ohe = None
-        self.oe = None
-        self._fit_ohe()
-        self._fit_oe()
+        self.cat_oe = None
+        self._fit_cat_oe()
 
 
     def get_train(self) -> pd.DataFrame:
@@ -129,30 +128,37 @@ class DatasetLoader:
 
         return splits
 
-    def _fit_ohe(self):
+    def _fit_cat_oe(self):
         train = self._get_npy_train()
         if train is None or self.categorical_cols is None:
             return None
+        unknown_value = np.iinfo('int64').max - 3
+        self.cat_oe = OrdinalEncoder(
+            handle_unknown='use_encoded_value',
+            unknown_value=unknown_value,
+            dtype='int64'
+        )
+        self.cat_oe.fit(self._dataframes['train'][self.categorical_cols])
+        return self.cat_oe
 
-        self.ohe = OneHotEncoder(verbose=True, cols=self.categorical_cols + [self.target])
-        self.ohe.fit(self._dataframes['train'], y=None)
-
-        return self.ohe
-
-    def _fit_oe(self):
+    def _fit_y_oe(self):
         train = self._get_npy_train()
-        if train is None or self.categorical_cols is None:
+        if train is None or self.target is None:
             return None
+        unknown_value = np.iinfo('int64').max - 3
+        self.y_oe = OrdinalEncoder(
+            handle_unknown='use_encoded_value',
+            unknown_value=unknown_value,
+            dtype='int64'
+        )
+        self.y_oe.fit(self._dataframes['train'][[self.target]])
+        return self.y_oe
 
-        self.oe = OrdinalEncoder(verbose=True, cols=self.categorical_cols + [self.target])
-        self.oe.fit(self._dataframes['train'], y=None)
-        return self.oe
+    def get_cat_oe(self):
+        return self.cat_oe
 
-    def get_ohe(self):
-        return self.ohe
-
-    def get_oe(self):
-        return self.oe
+    def get_y_oe(self):
+        return self.y_oe
 
 
 

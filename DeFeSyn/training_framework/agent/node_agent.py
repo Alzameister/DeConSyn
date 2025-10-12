@@ -5,6 +5,7 @@ from pathlib import Path
 
 import pandas as pd
 import torch
+from category_encoders import OrdinalEncoder
 from spade.agent import Agent
 from spade.template import Template
 from loguru import logger
@@ -35,9 +36,8 @@ class NodeConfig:
     device: str = "auto"
     model_type: str = "tabddpm",
     real_data_path: str | None = None,
-    real_full_data_path: str | None = None,
-    parent_dir: str | None = None,
-    target: str | None = None
+    target: str | None = None,
+    encoder: OrdinalEncoder | None = None
 
 @dataclass(frozen=True)
 class NodeData:
@@ -76,9 +76,8 @@ class NodeAgent(Agent):
 
         self.model_type: str = cfg.model_type
         self.real_data_path = cfg.real_data_path
-        self.real_full_data_path = cfg.real_full_data_path
-        self.parent_dir = cfg.parent_dir
         self.target = cfg.target
+        self.encoder = cfg.encoder
         self.log.info("Using model: {}", self.model_type)
 
         if cfg.device == "auto":

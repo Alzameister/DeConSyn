@@ -46,7 +46,8 @@ def make_dataset(
     num_classes: int,
     is_y_cond: bool,
     change_val: bool,
-    cache_dir: Path = None
+    cache_dir: Path = None,
+    encoder = None
 ):
     if cache_dir is not None:
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -96,4 +97,4 @@ def make_dataset(
     if change_val:
         D = change_value(D)
 
-    return transform_dataset(D, T, cache_dir)
+    return transform_dataset(D, T, None, cat_encoder=encoder)

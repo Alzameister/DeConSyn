@@ -1,13 +1,13 @@
-import pickle
 import threading
 from abc import ABC, abstractmethod
-from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
 import torch
 import os
+
+from category_encoders import OrdinalEncoder
 from torch.utils.data import DataLoader, Dataset
 
 from DeFeSyn.data.data_loader import DatasetLoader, ADULT_CATEGORICAL_COLUMNS
@@ -243,8 +243,7 @@ class TabDDPMModel(Model):
             discrete_columns,
             epochs: int,
             real_data_path: str,
-            real_full_data_path: str,
-            parent_dir: str,
+            encoder: OrdinalEncoder,
             verbose: bool = True,
             device: str = "cpu",
             target: str = "income"
@@ -255,6 +254,7 @@ class TabDDPMModel(Model):
         self.epochs = epochs
         self.target = target
         self.verbose = verbose
+        self.encoder = encoder
 
         model_type = "mlp"
         seed = 0
@@ -291,26 +291,8 @@ class TabDDPMModel(Model):
         }
 
         real_data_path = os.path.normpath(real_data_path)
-        parent_dir = os.path.normpath(parent_dir)
 
         T = Transformations(**T_dict)
-
-        cache_dir =( Path(parent_dir) / 'transformers').resolve()
-        cache_dir.mkdir(parents=True, exist_ok=True)
-
-        full_dataset = make_dataset(
-            real_full_data_path,
-            T,
-            num_classes=model_params['num_classes'],
-            is_y_cond=model_params['is_y_cond'],
-            change_val=False,
-            cache_dir=cache_dir
-        )
-
-        # Save dataset
-        full_dataset_path = Path(parent_dir) / 'full_dataset.pkl'
-        with open(full_dataset_path, 'wb') as f:
-            pickle.dump(full_dataset, f)
 
         self.dataset = make_dataset(
             real_data_path,
@@ -318,7 +300,7 @@ class TabDDPMModel(Model):
             num_classes=model_params['num_classes'],
             is_y_cond=model_params['is_y_cond'],
             change_val=False,
-            cache_dir=cache_dir
+            encoder=self.encoder
         )
 
         K = np.array(self.dataset.get_category_sizes('train'))

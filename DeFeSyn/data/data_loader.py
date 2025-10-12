@@ -2,7 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from category_encoders import OneHotEncoder
+from category_encoders import OneHotEncoder, OrdinalEncoder
 
 ADULT_CATEGORICAL_COLUMNS = [
         "workclass",
@@ -25,13 +25,17 @@ class DatasetLoader:
             raise ValueError(f"Dataset directory {self.dataset_dir} does not exist or is not a directory.")
 
         # train and test files
-        self.train_file = self.dataset_dir / 'train.csv'
-        self.test_file = self.dataset_dir / 'test.csv'
+        self.train_file = self.dataset_dir / 'csv' / 'train.csv'
+        self.test_file = self.dataset_dir / 'csv' / 'test.csv'
+
+        self.npy_dir = self.dataset_dir / 'npy'
 
         self._dataframes = {
             'train': pd.read_csv(self.train_file, header='infer'),
             'test': pd.read_csv(self.test_file, header='infer')
         }
+
+        self._load_npy()
 
         # Convert int to Int
         for key in self._dataframes:
@@ -57,12 +61,39 @@ class DatasetLoader:
         self.numerical_cols = [col for col in self._dataframes['train'].columns
                                if col not in self.categorical_cols and col != self.target]
 
+        self.ohe = None
+        self.oe = None
+        self._fit_ohe()
+        self._fit_oe()
+
 
     def get_train(self) -> pd.DataFrame:
         return self._dataframes['train']
 
     def get_test(self) -> pd.DataFrame:
         return self._dataframes['test']
+
+    def _load_npy(self):
+        files = {
+            'train': ['X_num_train.npy', 'X_cat_train.npy', 'y_train.npy'],
+            'test': ['X_num_test.npy', 'X_cat_test.npy', 'y_test.npy']
+        }
+        self.npy_data = {}
+        for split in ['train', 'test']:
+            arrays = []
+            for fname in files[split]:
+                path = self.npy_dir / fname
+                if path.exists():
+                    arr = np.load(path, allow_pickle=True)
+                    if arr.ndim == 1:
+                        arr = arr.reshape(-1, 1)
+                    arrays.append(arr)
+            if arrays:
+                self.npy_data[split] = np.concatenate(arrays, axis=1)
+
+    def _get_npy_train(self):
+        return self.npy_data.get('train', None)
+
 
     def split_iid(self, nr_agents: int, seed: int = 42):
         df = self.get_train()
@@ -99,13 +130,23 @@ class DatasetLoader:
         return splits
 
     def _fit_ohe(self):
-        df = self.get_train()
-        df = df[self.categorical_cols + [self.target]]
-        # Encode cat columns
-        self.ohe = OneHotEncoder().fit(df)
+        train = self._get_npy_train()
+        if train is None or self.categorical_cols is None:
+            return None
+
+        self.ohe = OneHotEncoder(verbose=True, cols=self.categorical_cols + [self.target])
+        self.ohe.fit(self._dataframes['train'], y=None)
 
         return self.ohe
 
+    def _fit_oe(self):
+        train = self._get_npy_train()
+        if train is None or self.categorical_cols is None:
+            return None
+
+        self.oe = OrdinalEncoder(verbose=True, cols=self.categorical_cols + [self.target])
+        self.oe.fit(self._dataframes['train'], y=None)
+        return self.oe
 
 
 

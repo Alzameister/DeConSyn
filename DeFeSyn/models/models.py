@@ -97,6 +97,7 @@ class CTGANModel(Model):
         self.weights: dict[str, dict[str, torch.Tensor]] = {}
         self._weights_lock = threading.RLock()
         self._cpu_weights: dict[str, dict[str, torch.Tensor]] | None  = None
+        self._loss_values = pd.DataFrame(columns=["Epoch", "Generator Loss", "Discriminator Loss"])
 
     # ----------------------------
     # Utilities
@@ -141,6 +142,13 @@ class CTGANModel(Model):
             gen_state_dict=self.weights.get("generator"),
             dis_state_dict=self.weights.get("discriminator"),
         )
+        loss_values = getattr(self.model, "loss_values", None)
+        if loss_values is not None:
+            lv_pd = pd.DataFrame(loss_values)
+            # Add to existing loss values
+            self._loss_values = pd.concat([self._loss_values, lv_pd], ignore_index=True)
+            self._loss_values["Epoch"] = self._loss_values.index + 1 * self.epochs
+            print(self._loss_values)
         self._move_modules()
         self._refresh_cpu_snapshot()
 

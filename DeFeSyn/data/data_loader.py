@@ -148,6 +148,12 @@ class DatasetLoader:
         self.oe.fit(self._dataframes['train'], y=None)
         return self.oe
 
+    def get_ohe(self):
+        return self.ohe
+
+    def get_oe(self):
+        return self.oe
+
 
 
 if __name__ == "__main__":

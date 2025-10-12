@@ -1,10 +1,12 @@
 import asyncio
 import gc
+import os
 import time
 from typing import Optional, Dict, Any
 
 import torch
 
+from DeFeSyn.io.io import get_run_dir
 from DeFeSyn.models.models import Model, TabDDPMModel, CTGANModel
 from DeFeSyn.training_framework.fsm.fsm_behaviour import FINAL_STATE, clear_memory, PULL_STATE, discrete_cols_of, \
     TrainSnapshot
@@ -101,7 +103,20 @@ class TrainingState(BaseState):
 
     def _capture_losses_and_weights(self):
         self.agent.loss_values = self.agent.model.get_loss_values()
-        self.agent.model.clear_loss_values()
+        # Log loss to console
+        if self.agent.loss_values is not None and not self.agent.loss_values.empty:
+            # Print all losses
+            self.agent.log.info("Loss values: {}", self.agent.loss_values.to_dict(orient="records"))
+            # Save to CSV
+            run_dir = get_run_dir(
+                run_id=self.agent.run_id,
+                node_id=self.agent.id,
+                repo_root=self.agent.repo_dir,
+            )
+            p = os.path.join(run_dir, "loss.csv")
+            self.agent.loss_values.to_csv(p, index=False)
+            self.agent.log.info("Saved loss history to {}", p)
+        # self.agent.model.clear_loss_values()
         self.agent.weights = self.agent.model.get_weights()
 
     async def _flush_pending_gossip_replies(self):

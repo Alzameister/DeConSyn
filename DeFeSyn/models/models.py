@@ -357,9 +357,16 @@ class TabDDPMModel(Model):
         self._weights_lock = threading.RLock()
         self._cpu_weights: dict[str, torch.Tensor] | None = None
 
+        self._max_step = 0
+        self._step_size = 100
+
     def fit(self):
         self.trainer.run_loop()
         self.loss_values = self.trainer.loss_history
+
+        if hasattr(self, "loss_values") and self.loss_values is not None and not self.loss_values.empty:
+            self.loss_values["step"] = [(i + 1) * self._step_size for i in range(len(self.loss_values))]
+
         self._refresh_cpu_snapshot()
 
     def postprocess_sample(self, X_gen, y_gen):

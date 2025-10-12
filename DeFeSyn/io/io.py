@@ -43,6 +43,11 @@ def make_path(run_id: str, node_id: int, iteration: int, phase: str | None, ext:
     fname = f"iter-{iteration:05d}{phase_part}.{ext}"
     return runs_dir(repo_root) / run_id / f"agent_{node_id:02d}" / fname
 
+def get_run_dir(run_id: str, node_id: int, repo_root: str | Path | None = None) -> Path:
+    p = runs_dir(repo_root) / run_id / f"agent_{node_id:02d}"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
+
 def parse_meta_from_path(path: str | Path) -> dict:
     s = str(path).replace("\\", "/")
     m = _PATH_RE.match(s)

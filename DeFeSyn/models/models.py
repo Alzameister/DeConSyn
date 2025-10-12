@@ -476,7 +476,7 @@ class TabDDPMModel(Model):
         self.full_data = self.full_data[ordered_columns]
         self.data = self.data[ordered_columns]
 
-    def fit_baseline(self, parent_dir, real_data_path, full_real_data_path):
+    def fit_baseline(self, parent_dir, real_data_path):
         model_type = "mlp"
         seed = 0
         device = "cpu"

@@ -9,7 +9,6 @@ import torch
 import os
 
 from category_encoders import OrdinalEncoder
-from torch.utils.data import DataLoader, Dataset
 
 from DeFeSyn.data.data_loader import DatasetLoader, ADULT_CATEGORICAL_COLUMNS
 from DeFeSyn.models.CTGAN.synthesizers.ctgan import CTGAN
@@ -25,11 +24,9 @@ from DeFeSyn.io.io import get_repo_root
 class Model(ABC):
     def __init__(
         self,
-        full_data: pd.DataFrame,
         data: pd.DataFrame,
         device: str = "cpu"
     ):
-        self.full_data = full_data
         self.data = data
         self.device, self.use_cuda_flag = self._resolve_device(device)
 
@@ -49,10 +46,6 @@ class Model(ABC):
 
     @abstractmethod
     def fit(self):
-        pass
-
-    @abstractmethod
-    def sample(self, num_samples: int, seed: int = 42):
         pass
 
     @abstractmethod
@@ -86,17 +79,18 @@ class Model(ABC):
 class CTGANModel(Model):
     def __init__(
             self,
-            full_data,
             data,
             discrete_columns,
             epochs: int,
+            data_transformer = None,
             verbose: bool = True,
             device: str = "cpu",
     ):
-        super().__init__(full_data, data, device)
+        super().__init__(data, device)
         self.discrete_columns = list(discrete_columns or [])
         self.epochs = int(epochs)
         self.verbose = bool(verbose)
+        self.data_transformer = data_transformer
 
         self.model = CTGAN(epochs=self.epochs, verbose=self.verbose, cuda=self.use_cuda_flag)
 
@@ -141,7 +135,7 @@ class CTGANModel(Model):
     def fit(self) -> None:
         """Fit CTGAN; refresh GPU placement and CPU snapshot afterwards."""
         self.model.fit(
-            full_data=self.full_data,
+            data_transformer=self.data_transformer,
             train_data=self.data,
             discrete_columns=self.discrete_columns,
             gen_state_dict=self.weights.get("generator"),
@@ -219,7 +213,6 @@ class CTGANModel(Model):
     def fit_baseline(self):
         self.model = CTGAN(epochs=self.epochs, verbose=True, cuda=self.use_cuda_flag)
         self.model.fit(
-            full_data=self.full_data,
             train_data=self.data,
             discrete_columns=self.discrete_columns,
             gen_state_dict=self.weights.get("generator"),
@@ -239,7 +232,6 @@ class CTGANModel(Model):
 class TabDDPMModel(Model):
     def __init__(
             self,
-            full_data,
             data,
             discrete_columns,
             epochs: int,
@@ -250,7 +242,7 @@ class TabDDPMModel(Model):
             target: str = "income"
 
     ):
-        super().__init__(full_data, data, device)
+        super().__init__(data, device)
         self.discrete_columns = discrete_columns
         self.epochs = epochs
         self.target = target
@@ -370,14 +362,6 @@ class TabDDPMModel(Model):
         self.loss_values = self.trainer.loss_history
         self._refresh_cpu_snapshot()
 
-    def sample(self, num_samples: int, seed: int = 42):
-        torch.manual_seed(seed)
-        self.diffusion.eval()
-        self.y_dist = self._get_y_dist()
-        with torch.no_grad():
-            x, y = self.diffusion.sample(num_samples, self.y_dist)
-            return self.postprocess_sample(x, y)
-
     def postprocess_sample(self, X_gen, y_gen):
         # Split into numerical and categorical features
         num_features = self.num_numerical_features
@@ -437,37 +421,12 @@ class TabDDPMModel(Model):
         if hasattr(self, "loss_values"):
             self.loss_values = None
 
-    def _get_num_classes(self) -> np.ndarray:
-        if not self.discrete_columns:
-            return np.array([0], dtype=np.int64)
-
-        num_classes = np.array([self.full_data[c].nunique() for c in self.discrete_columns], dtype=np.int64)
-        return num_classes
-
-    def _get_y_classes(self) -> int:
-        if not self.target:
-            return 0
-        num_classes = self.full_data[self.target].nunique()
-        return num_classes
-
-    def _get_y_dist(self) -> np.ndarray | None:
-        if not self.target:
-            return None
-        y_counts = self.full_data[self.target].value_counts().sort_index()
-        y_dist = y_counts / y_counts.sum()
-        return torch.tensor(y_dist.to_numpy(dtype=np.float32), dtype=torch.float32, device=self.device)
-
     def _snapshot_cpu(self) -> dict[str, torch.Tensor]:
         return {k: v.detach().cpu().clone() for k, v in self.model.state_dict().items()}
 
     def _refresh_cpu_snapshot(self) -> None:
         with self._weights_lock:
             self._cpu_weights = self._snapshot_cpu()
-
-    def _align_data(self):
-        ordered_columns = self.numerical_columns + self.discrete_columns + [self.target]
-        self.full_data = self.full_data[ordered_columns]
-        self.data = self.data[ordered_columns]
 
     def fit_baseline(self, parent_dir, real_data_path):
         model_type = "mlp"
@@ -558,7 +517,6 @@ if __name__ == '__main__':
     real_data_path = "../../data/adult/npy"
 
     model = TabDDPMModel(
-        full_data=full_train,
         data=full_train,
         discrete_columns=ADULT_CATEGORICAL_COLUMNS,
         epochs=10,

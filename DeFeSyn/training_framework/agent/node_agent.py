@@ -10,6 +10,7 @@ from spade.agent import Agent
 from spade.template import Template
 from loguru import logger
 
+from DeFeSyn.models.CTGAN.data_transformer import DataTransformer
 from DeFeSyn.training_framework.consensus.consensus import Consensus
 from DeFeSyn.models.models import Model
 from DeFeSyn.training_framework.fsm.fsm_behaviour import NodeFSMBehaviour, TRAINING_STATE, START_STATE, PULL_STATE, PUSH_STATE, FINAL_STATE
@@ -37,7 +38,8 @@ class NodeConfig:
     model_type: str = "tabddpm",
     real_data_path: str | None = None,
     target: str | None = None,
-    encoder: OrdinalEncoder | None = None
+    encoder: OrdinalEncoder | None = None,
+    data_transformer: DataTransformer | None = None
 
 @dataclass(frozen=True)
 class NodeData:
@@ -78,6 +80,7 @@ class NodeAgent(Agent):
         self.real_data_path = cfg.real_data_path
         self.target = cfg.target
         self.encoder = cfg.encoder
+        self.data_transformer = cfg.data_transformer
         self.log.info("Using model: {}", self.model_type)
 
         if cfg.device == "auto":

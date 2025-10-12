@@ -337,9 +337,9 @@ class CTGAN(BaseSynthesizer):
     @random_state
     def fit(
             self,
-            full_data,
             train_data,
             discrete_columns=(),
+            data_transformer = None,
             epochs=None,
             *,
             gen_state_dict=None,  # NEW (optional)
@@ -349,8 +349,8 @@ class CTGAN(BaseSynthesizer):
         """Fit the CTGAN Synthesizer models to the training data.
 
         Args:
-            full_data (numpy.ndarray or pandas.DataFrame):
-                Full Data. It must be a 2-dimensional numpy array or a pandas.DataFrame.
+            data_transformer (DataTransformer):
+                The DataTransformer instance to be used to transform the data.
             train_data (numpy.ndarray or pandas.DataFrame):
                 Training Data. It must be a 2-dimensional numpy array or a pandas.DataFrame.
             discrete_columns (list-like):
@@ -373,10 +373,14 @@ class CTGAN(BaseSynthesizer):
                 DeprecationWarning,
             )
 
-        if self._transformer is None:
+        if self._transformer is None and data_transformer is None:
             print("Fitting new DataTransformer model...")
             self._transformer = DataTransformer()
-            self._transformer.fit(full_data, discrete_columns)
+            self._transformer.fit(train_data, discrete_columns)
+            self.train_data = self._transformer.transform(train_data)
+        elif self._transformer is None and data_transformer is not None:
+            print("Using provided DataTransformer model...")
+            self._transformer = data_transformer
             self.train_data = self._transformer.transform(train_data)
 
         self._data_sampler = DataSampler(

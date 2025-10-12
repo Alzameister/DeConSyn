@@ -4,6 +4,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import OrdinalEncoder
 
+from DeFeSyn.models.CTGAN.data_transformer import DataTransformer
 
 ADULT_CATEGORICAL_COLUMNS = [
         "workclass",
@@ -62,7 +63,11 @@ class DatasetLoader:
                                if col not in self.categorical_cols and col != self.target]
 
         self.cat_oe = None
+        self.y_oe = None
+        self.data_transformer = None
         self._fit_cat_oe()
+        self._fit_y_oe()
+        self._fit_data_transformer()
 
 
     def get_train(self) -> pd.DataFrame:
@@ -159,6 +164,13 @@ class DatasetLoader:
     def get_y_oe(self):
         return self.y_oe
 
+    def _fit_data_transformer(self):
+        train = self.get_train()
+        self.data_transformer = DataTransformer()
+        self.data_transformer.fit(train, self.categorical_cols + [self.target])
+
+    def get_data_transformer(self):
+        return self.data_transformer
 
 
 if __name__ == "__main__":

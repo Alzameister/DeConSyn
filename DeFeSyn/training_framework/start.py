@@ -138,7 +138,8 @@ async def run(
                 model_type=model_type,
                 real_data_path=npy_path + f"/splits/{nr_agents}/split_{i}" ,
                 target=ADULT_TARGET,
-                encoder=loader.get_cat_oe()
+                encoder=loader.get_cat_oe(),
+                data_transformer=loader.get_data_transformer(),
             )
             data = partition_for(i)
             a = NodeAgent(cfg=cfg, data=data, neighbors=neighbors_map[cfg.jid])

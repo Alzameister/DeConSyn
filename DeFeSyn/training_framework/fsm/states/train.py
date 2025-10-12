@@ -64,7 +64,6 @@ class TrainingState(BaseState):
         if self.agent.model_type.lower() == "tabddpm":
             try:
                 self.agent.model: Model = TabDDPMModel(
-                    full_data=full_train,
                     data=part_train,
                     discrete_columns=dcols,
                     epochs=self._epochs,
@@ -78,7 +77,7 @@ class TrainingState(BaseState):
                 raise e
         elif self.agent.model_type.lower() == "ctgan":
             self.agent.model: Model = CTGANModel(
-                full_data=full_train,
+                data_transformer=self.agent.data_transformer,
                 data=part_train,
                 discrete_columns=dcols,
                 epochs=self._epochs,

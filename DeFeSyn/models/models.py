@@ -1,3 +1,4 @@
+import pickle
 import threading
 from abc import ABC, abstractmethod
 from typing import Any
@@ -302,6 +303,24 @@ class TabDDPMModel(Model):
             encoder=self.encoder
         )
 
+        # Save the encoders
+        num_encoder = self.dataset.num_transform
+        cat_encoder = self.dataset.cat_transform
+        y_encoder = self.dataset.y_transform
+
+        root = get_repo_root()
+        path = root / "runs" / "tabddpm"
+        os.makedirs(path, exist_ok=True)
+        num_path = path / "num_encoder.pkl"
+        cat_path = path / "cat_encoder.pkl"
+        y_path = path / "y_encoder.pkl"
+        with open(num_path, "wb") as f:
+            pickle.dump(num_encoder, f)
+        with open(cat_path, "wb") as f:
+            pickle.dump(cat_encoder, f)
+        with open(y_path, "wb") as f:
+            pickle.dump(y_encoder, f)
+
         K = np.array(self.dataset.get_category_sizes('train'))
         if len(K) == 0 or T_dict['cat_encoding'] == 'one-hot':
             K = np.array([0])
@@ -438,11 +457,6 @@ class TabDDPMModel(Model):
         y_dist = y_counts / y_counts.sum()
         return torch.tensor(y_dist.to_numpy(dtype=np.float32), dtype=torch.float32, device=self.device)
 
-    def _get_train_iter(self, shuffle=True):
-        dataset = TabularDataset(self.data, self.discrete_columns, self.target)
-        loader = DataLoader(dataset, batch_size=self.batch_size, shuffle=shuffle, drop_last=True)
-        return iter(loader)
-
     def _snapshot_cpu(self) -> dict[str, torch.Tensor]:
         return {k: v.detach().cpu().clone() for k, v in self.model.state_dict().items()}
 
@@ -475,7 +489,7 @@ class TabDDPMModel(Model):
         }
 
         train_main = {
-            "steps": 10,
+            "steps": 30_000,
             "lr": 0.001809824563637657,
             "weight_decay": 0.0,
             "batch_size": 4096
@@ -518,33 +532,6 @@ class TabDDPMModel(Model):
         torch.save(self.diffusion, model_path)
 
 
-class TabularDataset(Dataset):
-    def __init__(self, data: pd.DataFrame, discrete_columns: list[str], target: str):
-        self.data = data.reset_index(drop=True)
-        self.target = target
-        self.discrete_columns = [c for c in discrete_columns if c != target]
-        self.numerical_columns = [c for c in data.columns if c not in discrete_columns and c != target]
-
-        # Convert to numeric codes
-        for col in self.discrete_columns:
-            self.data[col] = self.data[col].cat.codes
-
-    def __len__(self):
-        return len(self.data)
-
-    def __getitem__(self, idx):
-        row = self.data.iloc[idx]
-        x_num = row[self.numerical_columns].to_numpy(dtype=np.float32)
-        x_cat = row[self.discrete_columns].to_numpy(dtype=np.int64)
-
-        x = np.concatenate([x_num, x_cat])
-        y = row[self.target]
-        if pd.api.types.is_categorical_dtype(self.data[self.target]):
-            y = self.data[self.target].cat.codes.iloc[idx]
-        x_tensor = torch.from_numpy(x)
-        y_tensor = torch.tensor(y, dtype=torch.long)
-        return x_tensor, y_tensor
-
 def get_model(
     model_name,
     model_params,
@@ -582,4 +569,4 @@ if __name__ == '__main__':
     )
     model.fit_baseline(data_dir, real_data_path)
 
-    samples = model.sample(1000, seed=42)
+    # samples = model.sample(1000, seed=42)

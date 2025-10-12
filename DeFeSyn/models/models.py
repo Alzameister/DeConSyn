@@ -257,7 +257,6 @@ class TabDDPMModel(Model):
         self.encoder = encoder
 
         model_type = "mlp"
-        seed = 0
 
         model_params = {
             "num_classes": 2,
@@ -353,8 +352,6 @@ class TabDDPMModel(Model):
         self._refresh_cpu_snapshot()
 
     def sample(self, num_samples: int, seed: int = 42):
-        #if not self.y_dist:
-        #    self.y_dist = self._get_y_dist()
         torch.manual_seed(seed)
         self.diffusion.eval()
         self.y_dist = self._get_y_dist()
@@ -581,7 +578,6 @@ if __name__ == '__main__':
         verbose=True,
         device="cpu",
         target="income",
-        parent_dir=data_dir,
         real_data_path=real_data_path
     )
     model.fit_baseline(data_dir, real_data_path)

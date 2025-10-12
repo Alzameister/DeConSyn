@@ -20,7 +20,6 @@ ADULT_TARGET = "income"
 
 class DatasetLoader:
     def __init__(self, dataset_dir: str, categorical_cols: list[str] = None, target: str = None):
-        # TODO: Also get numpy versions, fit ohe / ordinal encoders
         self.dataset_dir = Path(dataset_dir).expanduser().resolve()
         if not self.dataset_dir.exists() or not self.dataset_dir.is_dir():
             raise ValueError(f"Dataset directory {self.dataset_dir} does not exist or is not a directory.")

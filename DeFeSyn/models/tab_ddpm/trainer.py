@@ -24,8 +24,8 @@ class Trainer:
         self.optimizer = torch.optim.AdamW(self.diffusion.parameters(), lr=lr, weight_decay=weight_decay)
         self.device = device
         self.loss_history = pd.DataFrame(columns=['step', 'mloss', 'gloss', 'loss'])
-        self.log_every = 100
-        self.print_every = 500
+        self.log_every = 50
+        self.print_every = 100
         self.ema_every = 1000
 
     def _anneal_lr(self, step):
@@ -80,7 +80,6 @@ class Trainer:
 
 def train(
         parent_dir,
-        full_real_data_path,
         real_data_path='data/higgs-small',
         steps=1000,
         lr=0.002,
@@ -98,20 +97,12 @@ def train(
         change_val=False
 ):
     real_data_path = os.path.normpath(real_data_path)
-    full_real_data_path = os.path.normpath(full_real_data_path)
     parent_dir = os.path.normpath(parent_dir)
 
 
     T = Transformations(**T_dict)
     cache_dir = Path(parent_dir) / 'transformers'
 
-    full_dataset = make_dataset(
-        full_real_data_path,
-        T,
-        num_classes=model_params['num_classes'],
-        is_y_cond=model_params['is_y_cond'],
-        change_val=change_val
-    )
     dataset = make_dataset(
         real_data_path,
         T,
@@ -171,9 +162,10 @@ def train(
     torch.save(diffusion._denoise_fn.state_dict(), os.path.join(parent_dir, 'model.pt'))
     torch.save(trainer.ema_model.state_dict(), os.path.join(parent_dir, 'model_ema.pt'))
 
-    # Save dataset as pickle
-    dataset_path = os.path.join(parent_dir, "dataset.pkl")
-    with open(dataset_path, "wb") as f:
-        pickle.dump(dataset, f)
+    # Save model as a pickle file
+    with open(os.path.join(parent_dir, 'model_ema.pkl'), 'wb') as f:
+        pickle.dump(diffusion._denoise_fn, f)
+    with open(os.path.join(parent_dir, 'tabddpm_adult_baseline.pkl'), 'wb') as f:
+        pickle.dump(diffusion, f)
 
     return dataset

@@ -10,7 +10,7 @@ import os
 
 from category_encoders import OrdinalEncoder
 
-from DeFeSyn.data.data_loader import DatasetLoader, ADULT_CATEGORICAL_COLUMNS
+from DeFeSyn.data.data_loader import DatasetLoader, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET
 from DeFeSyn.models.CTGAN.synthesizers.ctgan import CTGAN
 from DeFeSyn.models.tab_ddpm import GaussianMultinomialDiffusion, MLPDiffusion, ResNetDiffusion
 from DeFeSyn.models.tab_ddpm.lib.data import Transformations, prepare_fast_dataloader
@@ -266,7 +266,7 @@ class TabDDPMModel(Model):
         }
 
         train_main = {
-            "steps": 50,
+            "steps": 100,
             "lr": 0.001809824563637657,
             "weight_decay": 0.0,
             "batch_size": 4096
@@ -510,7 +510,7 @@ def discrete_cols_of(df):
     return [c for c in df.columns if getattr(df[c].dtype, "name", "") == "category"]
 
 if __name__ == '__main__':
-    loader = DatasetLoader("../../data/adult/csv", ADULT_CATEGORICAL_COLUMNS)
+    loader = DatasetLoader("../../data/adult", ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET)
     full_train = loader.get_train()
     full_test = loader.get_test()
     data_dir = "../../runs/tabddpm/tabddpm_baseline"
@@ -523,7 +523,8 @@ if __name__ == '__main__':
         verbose=True,
         device="cpu",
         target="income",
-        real_data_path=real_data_path
+        real_data_path=real_data_path,
+        encoder=None
     )
     model.fit_baseline(data_dir, real_data_path)
 

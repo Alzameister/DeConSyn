@@ -100,8 +100,8 @@ rsync_with_retries() {
 
 sync_runs_and_logs() {
   ensure_remote_dirs
-  rsync_with_retries "$RUNS_DIR" "$DEST_RUNS"
-  rsync_with_retries "$LOGS_DIR" "$DEST_LOGS"
+  rsync_with_retries "$RUNS_DIR" "$DEST_RUNS" || return 1
+  rsync_with_retries "$LOGS_DIR" "$DEST_LOGS" || return 1
 }
 
 delete_runs_and_logs() {

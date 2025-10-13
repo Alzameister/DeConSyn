@@ -30,7 +30,7 @@ LAPTOP_KEY="$HOME/.ssh/id_vm_to_laptop"
 DEST_RUNS="/mnt/c/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/runs"
 DEST_LOGS="/mnt/c/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/logs"
 SSH_OPTS="-p $LAPTOP_PORT -o IdentitiesOnly=yes -i $LAPTOP_KEY -o StrictHostKeyChecking=accept-new"
-RSYNC_FLAGS="-a --no-perms --no-owner --no-group -h --info=progress2 --partial"
+RSYNC_FLAGS="-a --no-perms --no-owner --no-group -h --info=progress2 --partial --append-verify"
 
 PROJECT_ROOT="/home/ubuntu/FeDeSyn"
 PYTHON_EXEC="$PROJECT_ROOT/.venv/bin/python"

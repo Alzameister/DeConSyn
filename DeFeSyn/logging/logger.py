@@ -17,7 +17,8 @@ def init_logging(run_id: str | None = None,
                  agents: int | None = None,
                  epochs: int | None = None,
                  iterations: int | None = None,
-                 topology: str | None = None) -> str:
+                 topology: str | None = None,
+                 model_type: str | None = None) -> str:
     if run_id is None:
         current_time = datetime.now()
         parts = []
@@ -30,6 +31,8 @@ def init_logging(run_id: str | None = None,
         if topology is not None:
             safe_topology = re.sub(r"[^a-zA-Z0-9]", "", topology)
             parts.append(safe_topology)
+        if model_type is not None:
+            parts.append(model_type)
         meta = "-" + "-".join(parts) if parts else ""
         run_id = f"run-{current_time.strftime('%Y%m%d-%H%M%S')}{meta}"
     project_root = Path(__file__).resolve().parent.parent.parent

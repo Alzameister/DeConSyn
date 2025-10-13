@@ -79,7 +79,8 @@ async def run(
                           agents=nr_agents,
                           epochs=epochs,
                           iterations=max_iterations,
-                          topology=topology)
+                          topology=topology,
+                          model_type=model_type)
     set_global_seed(seed)
 
     # prepare data

@@ -13,12 +13,14 @@ from category_encoders import OrdinalEncoder
 from DeFeSyn.data.data_loader import DatasetLoader, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET
 from DeFeSyn.models.CTGAN.synthesizers.ctgan import CTGAN
 from DeFeSyn.models.tab_ddpm import GaussianMultinomialDiffusion, MLPDiffusion, ResNetDiffusion
+from DeFeSyn.models.tab_ddpm.lib import load_config
 from DeFeSyn.models.tab_ddpm.lib.data import Transformations, prepare_fast_dataloader
+from DeFeSyn.models.tab_ddpm.scripts.sample import sample
 from DeFeSyn.models.tab_ddpm.scripts.utils_train import make_dataset
 from DeFeSyn.models.tab_ddpm.trainer import Trainer, train
 from DeFeSyn.io.serialization import encode_state_dict_pair_blob, decode_state_dict_pair_blob
 from DeFeSyn.io.snapshots import snapshot_state_dict_pair
-from DeFeSyn.io.io import get_repo_root
+from DeFeSyn.io.io import get_repo_root, get_config_dir
 
 
 class Model(ABC):
@@ -219,12 +221,14 @@ class CTGANModel(Model):
             self.model.loss_values = None
 
     def fit_baseline(self):
+        self.epochs = 300
         self.model = CTGAN(epochs=self.epochs, verbose=True, cuda=self.use_cuda_flag)
         self.model.fit(
             train_data=self.data,
             discrete_columns=self.discrete_columns,
             gen_state_dict=self.weights.get("generator"),
             dis_state_dict=self.weights.get("discriminator"),
+            data_transformer=self.data_transformer
         )
         self._move_modules()
         self._refresh_cpu_snapshot()
@@ -242,7 +246,6 @@ class TabDDPMModel(Model):
             self,
             data,
             discrete_columns,
-            epochs: int,
             real_data_path: str,
             encoder: OrdinalEncoder,
             verbose: bool = True,
@@ -252,7 +255,6 @@ class TabDDPMModel(Model):
     ):
         super().__init__(data, device)
         self.discrete_columns = discrete_columns
-        self.epochs = epochs
         self.target = target
         self.verbose = verbose
         self.encoder = encoder
@@ -443,67 +445,19 @@ class TabDDPMModel(Model):
         with self._weights_lock:
             self._cpu_weights = self._snapshot_cpu()
 
-    def fit_baseline(self, parent_dir, real_data_path):
-        model_type = "mlp"
-        seed = 0
-        device = "cpu"
-
-        model_params = {
-            "num_classes": 2,
-            "is_y_cond": True,
-            "rtdl_params": {
-                "d_layers": [1024, 512],
-                "dropout": 0.0
-            }
-        }
-
-        diffusion_params = {
-            "num_timesteps": 1000,
-            "gaussian_loss_type": "mse"
-        }
-
-        train_main = {
-            "steps": 30_000,
-            "lr": 0.001809824563637657,
-            "weight_decay": 0.0,
-            "batch_size": 4096
-        }
-
-        T_dict = {
-            "seed": 0,
-            "normalization": "quantile",
-            "num_nan_policy": None,
-            "cat_nan_policy": None,
-            "cat_min_frequency": None,
-            "cat_encoding": None,
-            "y_policy": "default"
-        }
-
+    def fit_baseline(self, parent_dir, real_data_path, config):
         self.dataset = train(
             parent_dir=parent_dir,
             real_data_path=real_data_path,
-            steps=train_main["steps"],
-            lr=train_main["lr"],
-            weight_decay=train_main["weight_decay"],
-            batch_size=train_main["batch_size"],
-            model_type=model_type,
-            model_params=model_params,
-            num_timesteps=diffusion_params["num_timesteps"],
-            gaussian_loss_type=diffusion_params["gaussian_loss_type"],
-            scheduler="cosine",
-            T_dict=T_dict,
-            num_numerical_features=6,
-            device=device,
-            seed=seed,
+            **config['train']['main'],
+            **config['diffusion_params'],
+            model_type=config['model_type'],
+            model_params=config['model_params'],
+            T_dict=config['train']['T'],
+            num_numerical_features=config['num_numerical_features'],
+            device=self.device,
             change_val=False
         )
-
-        # Save model under runs/tabddpm_baseline
-        root = get_repo_root()
-        path = root / "runs" / "tabddpm" / "tabddpm_baseline"
-        os.makedirs(path, exist_ok=True)
-        model_path = path / "tabddpm_adult_baseline.pkl"
-        torch.save(self.diffusion, model_path)
 
 
 def get_model(
@@ -530,17 +484,53 @@ if __name__ == '__main__':
     full_test = loader.get_test()
     data_dir = "../../runs/tabddpm/tabddpm_baseline"
     real_data_path = "../../data/adult/npy"
+    transformer = loader.get_data_transformer()
+    encoder = loader.get_cat_oe()
+    config_dir = get_config_dir()
+    raw_config = config_dir / "config.toml"
+    config = load_config(raw_config)
+    root = get_repo_root()
+    path = root / "runs" / "tabddpm" / "tabddpm_baseline"
+    os.makedirs(path, exist_ok=True)
+    model_path = path / "model.pt"
 
-    model = TabDDPMModel(
-        data=full_train,
-        discrete_columns=ADULT_CATEGORICAL_COLUMNS,
-        epochs=10,
-        verbose=True,
-        device="cpu",
-        target="income",
+    # model = TabDDPMModel(
+    #     data=full_train,
+    #     discrete_columns=discrete_cols_of(full_train),
+    #     real_data_path=real_data_path,
+    #     encoder=encoder,
+    #     device="cpu",
+    #     target=ADULT_TARGET
+    # )
+    # model.fit_baseline(data_dir, real_data_path, config)
+
+    sample(
+        parent_dir=data_dir,
         real_data_path=real_data_path,
-        encoder=None
+        num_samples=2000,
+        batch_size=2000,
+        disbalance=config['sample'].get('disbalance', None),
+        **config['diffusion_params'],
+        model_path=model_path,
+        model_type=config['model_type'],
+        model_params=config['model_params'],
+        T_dict=config['train']['T'],
+        num_numerical_features=config['num_numerical_features'],
+        device="cpu",
+        seed=0,
+        change_val=False
     )
-    model.fit_baseline(data_dir, real_data_path)
 
-    # samples = model.sample(1000, seed=42)
+    x_cat_train_p = path / 'X_cat_train.npy'
+    x_num_train_p = path / 'X_num_train.npy'
+    y_train_p = path / 'y_train.npy'
+
+    x_cat_train = np.load(x_cat_train_p, allow_pickle=True)
+    x_num_train = np.load(x_num_train_p, allow_pickle=True)
+    y_train = np.load(y_train_p, allow_pickle=True)
+
+    x_cat_train_pd = pd.DataFrame(x_cat_train)
+    x_num_train_pd = pd.DataFrame(x_num_train)
+    y_train_pd = pd.DataFrame(y_train)
+
+    print(x_cat_train_pd)

@@ -118,8 +118,6 @@ def load_pickle(path: Union[Path, str], **kwargs) -> Any:
 
 
 def dump_pickle(x: Any, path: Union[Path, str], **kwargs) -> None:
-    # If path not exists, it will be created.
-    Path(path).parent.mkdir(parents=True, exist_ok=True)
     Path(path).write_bytes(pickle.dumps(x, **kwargs))
 
 

@@ -133,6 +133,7 @@ class Dataset:
 
     def get_category_sizes(self, part: str) -> List[int]:
         # return [] if self.X_cat is None else get_category_sizes(self.X_cat[part])
+        print(get_category_sizes(self.X_cat[part]))
         return [] if self.X_cat is None else get_encoder_sizes(self.cat_transform.steps[0][1])
 
     def calculate_metrics(
@@ -728,10 +729,7 @@ def concat_to_pd(X_num, X_cat, y):
         ], axis=1)
 
 def read_pure_data(path, split='train'):
-    try:
-        y = np.load(os.path.join(path, f'y_{split}.npy'), allow_pickle=True)
-    except:
-        return None, None, None
+    y = np.load(os.path.join(path, f'y_{split}.npy'), allow_pickle=True)
     X_num = None
     X_cat = None
     if os.path.exists(os.path.join(path, f'X_num_{split}.npy')):

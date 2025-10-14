@@ -68,7 +68,6 @@ class TrainingState(BaseState):
                 self.agent.model: Model = TabDDPMModel(
                     data=part_train,
                     discrete_columns=dcols,
-                    epochs=self._epochs,
                     verbose=True,
                     device=self.agent.device,
                     real_data_path=self.agent.real_data_path,

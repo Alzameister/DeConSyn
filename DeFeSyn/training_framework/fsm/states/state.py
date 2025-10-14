@@ -78,8 +78,17 @@ class BaseState(State, ABC):
             ext="pkl",
             repo_root=self.agent.repo_dir,
         )
+        pt = make_path(
+            run_id=self.agent.run_id,
+            node_id=self.agent.id,
+            iteration=it,
+            phase="model",
+            ext="pt",
+            repo_root=self.agent.repo_dir
+        )
         model = self.agent.model
         if hasattr(model, "diffusion"):
+            torch.save(model.diffusion._denoise_fn.state_dict(), pt)
             save_model_pickle(model=model.diffusion, path=p)
         elif hasattr(model, "model"):
             save_model_pickle(model=model.model, path=p)

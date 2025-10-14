@@ -88,7 +88,6 @@ class BaseState(State, ABC):
         )
         model = self.agent.model
         if hasattr(model, "diffusion"):
-            torch.save(model.diffusion._denoise_fn.state_dict(), pt)
             save_model_pickle(model=model.diffusion, path=p)
         elif hasattr(model, "model"):
             save_model_pickle(model=model.model, path=p)

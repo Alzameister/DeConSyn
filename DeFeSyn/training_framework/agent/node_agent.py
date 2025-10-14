@@ -39,7 +39,8 @@ class NodeConfig:
     real_data_path: str | None = None,
     target: str | None = None,
     encoder: OrdinalEncoder | None = None,
-    data_transformer: DataTransformer | None = None
+    data_transformer: DataTransformer | None = None,
+    config: dict | None = None
 
 @dataclass(frozen=True)
 class NodeData:
@@ -81,6 +82,8 @@ class NodeAgent(Agent):
         self.target = cfg.target
         self.encoder = cfg.encoder
         self.data_transformer = cfg.data_transformer
+        if self.model_type.lower() == "tabddpm":
+            self.config = cfg.config
         self.log.info("Using model: {}", self.model_type)
 
         if cfg.device == "auto":

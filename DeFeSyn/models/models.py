@@ -248,6 +248,7 @@ class TabDDPMModel(Model):
             discrete_columns,
             real_data_path: str,
             encoder: OrdinalEncoder,
+            config: dict,
             verbose: bool = True,
             device: str = "cpu",
             target: str = "income"
@@ -258,39 +259,15 @@ class TabDDPMModel(Model):
         self.target = target
         self.verbose = verbose
         self.encoder = encoder
+        self.config = config
 
-        model_type = "mlp"
+        model_type = config['model_type']
+        model_params = config['model_params']
+        diffusion_params = config['diffusion_params']
+        train_main = config['train']['main']
+        T_dict = config['train']['T']
+        num_numerical_features = config['num_numerical_features']
 
-        model_params = {
-            "num_classes": 2,
-            "is_y_cond": True,
-            "rtdl_params": {
-                "d_layers": [1024, 512],
-                "dropout": 0.0
-            }
-        }
-
-        diffusion_params = {
-            "num_timesteps": 1000,
-            "gaussian_loss_type": "mse"
-        }
-
-        train_main = {
-            "steps": 100,
-            "lr": 0.001809824563637657,
-            "weight_decay": 0.0,
-            "batch_size": 4096
-        }
-
-        T_dict = {
-            "seed": 0,
-            "normalization": "quantile",
-            "num_nan_policy": None,
-            "cat_nan_policy": None,
-            "cat_min_frequency": None,
-            "cat_encoding": None,
-            "y_policy": "default"
-        }
 
         real_data_path = os.path.normpath(real_data_path)
 
@@ -324,7 +301,7 @@ class TabDDPMModel(Model):
             pickle.dump(y_encoder, f)
 
         K = np.array(self.dataset.get_category_sizes('train'))
-        if len(K) == 0 or T_dict['cat_encoding'] == 'one-hot':
+        if len(K) == 0 or T_dict.get('cat_encoding') == 'one-hot':
             K = np.array([0])
         print(K)
 

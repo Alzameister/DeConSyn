@@ -97,9 +97,42 @@ class DatasetLoader:
     def _get_npy_train(self):
         return self.npy_data.get('train', None)
 
-
     def split_iid(self, nr_agents: int, seed: int = 42):
         df = self.get_train()
+        rng = np.random.default_rng(seed)
+        allocations = [[] for _ in range(nr_agents)]
+        assigned_indices = set()
+
+        # Ensure each agent gets at least one row per value in each categorical column
+        for col in self.categorical_cols:
+            for val, group in df.groupby(col, observed=True, sort=False):
+                idx = group.index.difference(assigned_indices).to_numpy()
+                rng.shuffle(idx)
+                for i in range(min(nr_agents, len(idx))):
+                    allocations[i].append(idx[i])
+                    assigned_indices.add(idx[i])
+
+        remaining_indices = df.index.difference(assigned_indices).to_numpy()
+        rng.shuffle(remaining_indices)
+        split_sizes = [len(remaining_indices) // nr_agents] * nr_agents
+        for i in range(len(remaining_indices) % nr_agents):
+            split_sizes[i] += 1
+
+        start = 0
+        for i, size in enumerate(split_sizes):
+            end = start + size
+            allocations[i].extend(remaining_indices[start:end])
+            start = end
+
+        splits = []
+        for agent_rows in allocations:
+            agent_df = df.loc[agent_rows].sample(frac=1.0, random_state=seed)
+            splits.append(agent_df.reset_index(drop=True))
+
+        return splits
+
+    def split_test_iid(self, nr_agents: int, seed: int = 42):
+        df = self.get_test()
         rng = np.random.default_rng(seed)
         allocations = [[] for _ in range(nr_agents)]
         assigned_indices = set()

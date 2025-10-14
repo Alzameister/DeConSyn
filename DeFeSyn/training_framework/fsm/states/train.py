@@ -72,7 +72,8 @@ class TrainingState(BaseState):
                     device=self.agent.device,
                     real_data_path=self.agent.real_data_path,
                     target=self.agent.target,
-                    encoder=self.agent.encoder
+                    encoder=self.agent.encoder,
+                    config=self.agent.config
                 )
             except Exception as e:
                 raise e

@@ -13,6 +13,7 @@ from joblib import parallel_config
 from DeFeSyn.data.data_loader import DatasetLoader, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET
 from DeFeSyn.data.data_transformer import DataTransformer
 from DeFeSyn.logging.logger import init_logging
+from DeFeSyn.models.tab_ddpm.lib import load_config
 from DeFeSyn.training_framework.agent.node_agent import NodeAgent, NodeConfig, NodeData
 from DeFeSyn.utils.graph import Graph
 from DeFeSyn.utils.seed import set_global_seed
@@ -72,7 +73,8 @@ async def run(
     log_level: str = "INFO",
     k: int = 4,
     p: float = 0.1,
-    model_type: str = "tabddpm"
+    model_type: str = "tabddpm",
+    config_path: str | None = None
 ):
     # logging + seed
     run_id = init_logging(level=log_level.upper(),
@@ -82,6 +84,9 @@ async def run(
                           topology=topology,
                           model_type=model_type)
     set_global_seed(seed)
+
+    if model_type == "tabddpm":
+        config = load_config(config_path)
 
     # prepare data
     csv_path = data_root + "/csv"
@@ -95,6 +100,7 @@ async def run(
     full_train = loader.get_train()
     full_test = loader.get_test()
     splits = loader.split_iid(nr_agents, seed=seed)
+    test_splits = loader.split_test_iid(nr_agents, seed=seed)
 
     def partition_for(i: int) -> NodeData:
         part_train = splits[i]
@@ -105,6 +111,13 @@ async def run(
         part = splits[i]
         transformer.save_split_npy(
             part,
+            Path(npy_path) / "splits" / str(nr_agents),
+            i,
+            ADULT_CATEGORICAL_COLUMNS,
+            ADULT_TARGET
+        )
+        transformer.save_test_split_npy(
+            test_splits[i],
             Path(npy_path) / "splits" / str(nr_agents),
             i,
             ADULT_CATEGORICAL_COLUMNS,
@@ -141,6 +154,7 @@ async def run(
                 target=ADULT_TARGET,
                 encoder=loader.get_cat_oe(),
                 data_transformer=loader.get_data_transformer(),
+                config = config if model_type == "tabddpm" else None
             )
             data = partition_for(i)
             a = NodeAgent(cfg=cfg, data=data, neighbors=neighbors_map[cfg.jid])
@@ -194,7 +208,8 @@ async def cli_async(args: argparse.Namespace) -> int:
             seed=args.seed,
             n_jobs=args.n_jobs,
             log_level=args.log_level,
-            model_type=args.model_type
+            model_type=args.model_type,
+            config_path=args.config
         )
         return 0
 
@@ -218,6 +233,7 @@ def build_parser() -> argparse.ArgumentParser:
         sp.add_argument("--n-jobs", type=int, default=1, help="joblib parallel workers (default: 1)")
         sp.add_argument("--log-level", default="INFO", choices=["DEBUG","INFO","WARNING","ERROR"], help="Logging level")
         sp.add_argument("--model-type", default="tabddpm", choices=["tabddpm", "ctgan"], help="Model type to use (default: tabddpm)")
+        sp.add_argument("--config", default=None, help="Path to config file for TabDDPM (default: None)")
 
     # run
     sp_run = sub.add_parser("run", help="Run a single experiment")

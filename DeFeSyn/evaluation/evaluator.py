@@ -14,7 +14,9 @@ import seaborn as sns
 from sklearn.decomposition import PCA
 
 from DeFeSyn.data.data_loader import DatasetLoader
-from DeFeSyn.io.io import load_model_pickle, get_repo_root
+from DeFeSyn.io.io import load_model_pickle, get_repo_root, get_config_dir
+from DeFeSyn.models.tab_ddpm.lib import load_config
+from DeFeSyn.models.tab_ddpm.scripts.sample import sample
 from FEST.privacy_utility_framework.build.lib.privacy_utility_framework.metrics.utility_metrics.statistical.ks_test import \
     KSCalculator
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.attacks.inference_class import \
@@ -95,8 +97,7 @@ class Evaluator:
         self.metrics = metrics if metrics is not None else [
             "DCR", "NNDR", "AdversarialAccuracy", "Disclosure",
             "BasicStats", "JS", "KS",
-            "CorrelationPearson", "CorrelationSpearman", "PCA",
-            "Consensus"
+            "CorrelationPearson", "CorrelationSpearman", "PCA", "PCA3D"
         ]
 
         # Disclosure
@@ -126,38 +127,33 @@ class Evaluator:
             # Convert all integer columns in full_train to float
             int_cols = original_data.select_dtypes(include=['int64']).columns
             original_data[int_cols] = original_data[int_cols].astype('float64')
-            model = load_model_pickle(Path(self.model_path))
+            config = load_config(get_config_dir() / "config.toml")
 
-            repo_root = get_repo_root()
-            num_encoder_path = os.path.join(repo_root, "runs", "tabddpm", "num_encoder.pkl")
-            cat_encoder_path = os.path.join(repo_root, "runs", "tabddpm", "cat_encoder.pkl")
-            y_encoder_path = os.path.join(repo_root, "runs", "tabddpm", "y_encoder.pkl")
+            sample(
+                parent_dir=self.run_dir,
+                model_path=self.model_path,
+                real_data_path=self.data_dir + "/npy",
+                num_samples=100,#len(original_data),
+                batch_size=100,#config['sample']['batch_size'],
+                disbalance=config['sample'].get('disbalance', None),
+                **config['diffusion_params'],
+                model_type=config['model_type'],
+                model_params=config['model_params'],
+                T_dict=config['train']['T'],
+                num_numerical_features=config['num_numerical_features'],
+                device="cpu",
+                seed=0,
+                change_val=False
+            )
 
-            with open(num_encoder_path, "rb") as f:
-                num_transform = pickle.load(f)
-            with open(cat_encoder_path, "rb") as f:
-                cat_transform = pickle.load(f)
-            with open(y_encoder_path, "rb") as f:
-                y_transform = pickle.load(f)
+            x_cat_p = self.run_dir / 'X_cat_train.npy'
+            x_num_p = self.run_dir / 'X_num_train.npy'
+            y_p = self.run_dir / 'y_train.npy'
 
-            model.eval()
-            torch.manual_seed(self.seed)
+            x_cat = np.load(x_cat_p, allow_pickle=True)
+            x_num = np.load(x_num_p, allow_pickle=True)
+            y = np.load(y_p, allow_pickle=True)
 
-            y = original_data[self.target].values
-
-            unique, counts = np.unique(y, return_counts=True)
-            y_dist = counts / counts.sum()
-            y_dist = torch.tensor(y_dist, dtype=torch.float32)
-
-            x_gen, y_gen = model.sample(len(original_data), y_dist)
-            num_numerical_columns = len(original_data.columns) - len(self.categorical_cols)
-            x_num = x_gen[:, :num_numerical_columns]
-            x_cat = x_gen[:, num_numerical_columns:]
-            y_gen = y_gen['y']
-
-            x_num = num_transform.inverse_transform(x_num)
-            x_cat = cat_transform.inverse_transform(x_cat)
-            y = y_transform.inverse_transform(y_gen.reshape(-1,1))
 
             x_gen = np.concatenate([x_num, x_cat], axis=1)
             synthetic = pd.DataFrame(x_gen, columns=original_data.columns.drop(self.target))
@@ -171,11 +167,10 @@ class Evaluator:
             for col in original_data.columns:
                 if col not in self.categorical_cols and col != self.target:
                     synthetic[col] = synthetic[col].astype('float64')
-        elif self.model_type.lower() == "ctgan":
+        elif self.model_type.lower() == "ctgan" and self.metrics != ['Consensus']:
             model = load_model_pickle(Path(self.model_path))
-            synthetic = model.sample(len(original_data), self.seed)
-        else:
-            raise ValueError("Unsupported model type. Use 'ctgan' or 'tabddpm'.")
+            #synthetic = model.sample(len(original_data), self.seed)
+            synthetic = model.sample(10_000, self.seed)
 
         if self.metrics != ['Consensus']:
             privacy_res = self.privacy_metrics(original_data, synthetic)
@@ -218,8 +213,12 @@ class Evaluator:
                 if (self.privacy_dir / "NNDR_result.txt").exists():
                     print("NNDR result already exists, skipping computation.")
                     continue
-                r = NNDRCalculator(original=original, synthetic=synthetic,
-                                   original_name=self.original_name, synthetic_name=self.synthetic_name).evaluate()
+                try:
+                    r = NNDRCalculator(original=original, synthetic=synthetic,
+                                       original_name=self.original_name, synthetic_name=self.synthetic_name).evaluate()
+                except Exception as e:
+                    print("NNDR calculation failed:", e)
+                    continue
                 privacy_res[name] = r
                 self._save_txt(name, r, self.privacy_dir)
                 self.results.at[self.synthetic_name, "NNDR"] = r if isinstance(r, float) else r.get("NNDR", np.nan)
@@ -228,9 +227,13 @@ class Evaluator:
                 if (self.privacy_dir / "AdversarialAccuracy_result.txt").exists():
                     print("AdversarialAccuracy result already exists, skipping computation.")
                     continue
-                r = AdversarialAccuracyCalculator(original=original, synthetic=synthetic,
-                                                  original_name=self.original_name,
-                                                  synthetic_name=self.synthetic_name).evaluate()
+                try:
+                    r = AdversarialAccuracyCalculator(original=original, synthetic=synthetic,
+                                                      original_name=self.original_name,
+                                                      synthetic_name=self.synthetic_name).evaluate()
+                except Exception as e:
+                    print("AdversarialAccuracy calculation failed:", e)
+                    continue
                 privacy_res[name] = r
                 self._save_txt(name, r, self.privacy_dir)
                 self.results.at[self.synthetic_name, "AdversarialAccuracy"] = r if isinstance(r, float) else r.get(
@@ -278,7 +281,7 @@ class Evaluator:
                 self._save_txt(name, r, self.privacy_dir)
                 print(r)
             elif name == "Disclosure":
-                if (self.privacy_dir / "DiSCO.txt").exists() and (self.privacy_dir / "RepU.txt").exists():
+                if (self.privacy_dir / "DiSCO_result.txt").exists() and (self.privacy_dir / "RepU_result.txt").exists():
                     print("Disclosure result already exists, skipping computation.")
                     continue
                 discoCalc = DisclosureCalculator(original=original, synthetic=synthetic, keys=self.keys,
@@ -745,6 +748,30 @@ class Evaluator:
         plt.savefig(fig1)
         plt.clf()
 
+        fig1_linear = out_dir / "consensus-error-per-agent-linear.png"
+        plt.figure()
+        for ag in agents:
+            plt.plot(iters, res["E_rel"][ag], label=ag, alpha=0.9)
+        plt.xlabel("Round")
+        plt.ylabel("Relative consensus error")
+        plt.title(f"Per-agent consensus error (relative, linear scale). Run: {run_dir.name}")
+        plt.legend(fontsize="small", ncol=2)
+        plt.tight_layout()
+        plt.savefig(fig1_linear)
+        plt.clf()
+
+        fig1_abs_linear = out_dir / "consensus-error-per-agent-abs-linear.png"
+        plt.figure()
+        for ag in agents:
+            plt.plot(iters, res["E_abs"][ag], label=ag, alpha=0.9)
+        plt.xlabel("Round")
+        plt.ylabel("Absolute consensus error")
+        plt.title(f"Per-agent consensus error (absolute, linear scale). Run: {run_dir.name}")
+        plt.legend(fontsize="small", ncol=2)
+        plt.tight_layout()
+        plt.savefig(fig1_abs_linear)
+        plt.clf()
+
         # 2) Average errors
         fig2 = out_dir / "consensus-error-average.png"
         plt.figure()
@@ -975,8 +1002,6 @@ def cli(argv: list[str] = None) -> int:
 
     if args.baseline:
         print("Running baseline evaluation (no synthetic data)...")
-        if len(orig_metrics) != 1 or orig_metrics[0].lower() != "consensus":
-            orig_metrics = [m for m in orig_metrics if m.lower() != "consensus"]
         if not args.run_dir:
             print("ERROR: --run-dir is required when running baseline (for Consensus metric).", file=sys.stderr)
             return 2
@@ -1037,7 +1062,7 @@ def cli(argv: list[str] = None) -> int:
             regression=args.regression,
             link_aux_cols=link_aux_cols,
             control_frac=args.control_frac,
-            run_dir=None if "consensus" not in selected else args.run_dir
+            run_dir=args.run_dir
         )
         evaluator.seed = args.seed
 

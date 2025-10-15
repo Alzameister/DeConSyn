@@ -6,6 +6,7 @@ from pathlib import Path
 import pandas as pd
 import torch
 from category_encoders import OrdinalEncoder
+from sklearn.preprocessing import QuantileTransformer
 from spade.agent import Agent
 from spade.template import Template
 from loguru import logger
@@ -38,7 +39,9 @@ class NodeConfig:
     model_type: str = "tabddpm",
     real_data_path: str | None = None,
     target: str | None = None,
-    encoder: OrdinalEncoder | None = None,
+    cat_encoder: OrdinalEncoder | None = None,
+    num_encoder: QuantileTransformer | None = None,
+    y_encoder: OrdinalEncoder | None = None,
     data_transformer: DataTransformer | None = None,
     config: dict | None = None
 
@@ -80,7 +83,9 @@ class NodeAgent(Agent):
         self.model_type: str = cfg.model_type
         self.real_data_path = cfg.real_data_path
         self.target = cfg.target
-        self.encoder = cfg.encoder
+        self.cat_encoder = cfg.cat_encoder
+        self.num_encoder = cfg.num_encoder
+        self.y_encoder = cfg.y_encoder
         self.data_transformer = cfg.data_transformer
         if self.model_type.lower() == "tabddpm":
             self.config = cfg.config

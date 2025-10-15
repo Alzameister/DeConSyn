@@ -218,10 +218,12 @@ def num_process_nans(dataset: Dataset, policy: Optional[NumNanPolicy]) -> Datase
 
 # Inspired by: https://github.com/yandex-research/rtdl/blob/a4c93a32b334ef55d2a0559a4407c8306ffeeaee/lib/data.py#L20
 def normalize(
-    X: ArrayDict, normalization: Normalization, seed: Optional[int], return_normalizer : bool = False
+    X: ArrayDict, normalization: Normalization, seed: Optional[int], return_normalizer : bool = False, num_encoder = None
 ) -> ArrayDict:
     X_train = X['train']
-    if normalization == 'standard':
+    if num_encoder is not None:
+        normalizer = num_encoder
+    elif normalization == 'standard':
         normalizer = sklearn.preprocessing.StandardScaler()
     elif normalization == 'minmax':
         normalizer = sklearn.preprocessing.MinMaxScaler()
@@ -411,6 +413,8 @@ def transform_dataset(
     transformations: Transformations,
     cache_dir: Optional[Path],
     cat_encoder = None,
+    y_encoder = None,
+    num_encoder = None,
     return_transforms: bool = False
 ) -> Dataset:
     # WARNING: the order of transformations matters. Moreover, the current
@@ -448,7 +452,8 @@ def transform_dataset(
             X_num,
             transformations.normalization,
             transformations.seed,
-            return_normalizer=True
+            return_normalizer=True,
+            num_encoder=num_encoder
         )
         num_transform = num_transform
     
@@ -485,6 +490,7 @@ def transform_dataset(
         y,y_transform = y_encode(
             y,
             transformations.cat_encoding,
+            y_encoder=y_encoder
         )
         dataset.y = y
 

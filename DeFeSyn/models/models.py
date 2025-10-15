@@ -247,7 +247,9 @@ class TabDDPMModel(Model):
             data,
             discrete_columns,
             real_data_path: str,
-            encoder: OrdinalEncoder,
+            cat_encoder: OrdinalEncoder,
+            num_encoder: Any,
+            y_encoder: Any,
             config: dict,
             verbose: bool = True,
             device: str = "cpu",
@@ -258,8 +260,11 @@ class TabDDPMModel(Model):
         self.discrete_columns = discrete_columns
         self.target = target
         self.verbose = verbose
-        self.encoder = encoder
+        self.cat_encoder = cat_encoder
+        self.num_encoder = num_encoder
+        self.y_encoder = y_encoder
         self.config = config
+
 
         model_type = config['model_type']
         model_params = config['model_params']
@@ -279,7 +284,9 @@ class TabDDPMModel(Model):
             num_classes=model_params['num_classes'],
             is_y_cond=model_params['is_y_cond'],
             change_val=False,
-            encoder=self.encoder
+            cat_encoder=self.cat_encoder,
+            num_encoder=self.num_encoder,
+            y_encoder=self.y_encoder
         )
 
         # Save the encoders
@@ -459,7 +466,7 @@ if __name__ == '__main__':
     loader = DatasetLoader("../../data/adult", ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET)
     full_train = loader.get_train()
     full_test = loader.get_test()
-    data_dir = "../../runs/tabddpm/tabddpm_baseline"
+    data_dir = "../../runs/tabddpm/tabddpm_baseline/base2"
     real_data_path = "../../data/adult/npy"
     transformer = loader.get_data_transformer()
     encoder = loader.get_cat_oe()
@@ -471,15 +478,16 @@ if __name__ == '__main__':
     os.makedirs(path, exist_ok=True)
     model_path = path / "model.pt"
 
-    # model = TabDDPMModel(
-    #     data=full_train,
-    #     discrete_columns=discrete_cols_of(full_train),
-    #     real_data_path=real_data_path,
-    #     encoder=encoder,
-    #     device="cpu",
-    #     target=ADULT_TARGET
-    # )
-    # model.fit_baseline(data_dir, real_data_path, config)
+    model = TabDDPMModel(
+        data=full_train,
+        discrete_columns=discrete_cols_of(full_train),
+        real_data_path=real_data_path,
+        encoder=encoder,
+        device="cpu",
+        target=ADULT_TARGET,
+        config=config
+    )
+    model.fit_baseline(data_dir, real_data_path, config)
 
     sample(
         parent_dir=data_dir,

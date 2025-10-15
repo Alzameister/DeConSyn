@@ -152,7 +152,9 @@ async def run(
                 model_type=model_type,
                 real_data_path=npy_path + f"/splits/{nr_agents}/split_{i}" ,
                 target=ADULT_TARGET,
-                encoder=loader.get_cat_oe(),
+                cat_encoder=loader.get_cat_oe(),
+                num_encoder=loader.get_num_transformer(),
+                y_encoder=loader.get_y_oe(),
                 data_transformer=loader.get_data_transformer(),
                 config = config if model_type == "tabddpm" else None
             )

@@ -4,6 +4,7 @@ from pathlib import Path
 import numpy as np
 
 from DeFeSyn.models.tab_ddpm import MLPDiffusion, ResNetDiffusion
+from DeFeSyn.models.tab_ddpm.lib import y_encode
 from DeFeSyn.models.tab_ddpm.lib.data import Transformations, read_pure_data, Dataset, transform_dataset
 from DeFeSyn.models.tab_ddpm.lib.util import load_json, TaskType
 from DeFeSyn.models.tab_ddpm.lib.data import change_val as change_value
@@ -47,7 +48,9 @@ def make_dataset(
     is_y_cond: bool,
     change_val: bool,
     cache_dir: Path = None,
-    encoder = None
+    cat_encoder = None,
+    num_encoder = None,
+    y_encoder = None
 ):
     if cache_dir is not None:
         cache_dir.mkdir(parents=True, exist_ok=True)
@@ -97,4 +100,4 @@ def make_dataset(
     if change_val:
         D = change_value(D)
 
-    return transform_dataset(D, T, None, cat_encoder=encoder)
+    return transform_dataset(D, T, None, cat_encoder=cat_encoder, num_encoder=num_encoder, y_encoder=y_encoder)

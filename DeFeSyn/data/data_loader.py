@@ -2,7 +2,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from sklearn.preprocessing import OrdinalEncoder
+from sklearn.preprocessing import OrdinalEncoder, QuantileTransformer
 
 from DeFeSyn.models.CTGAN.data_transformer import DataTransformer
 
@@ -68,6 +68,7 @@ class DatasetLoader:
         self._fit_cat_oe()
         self._fit_y_oe()
         self._fit_data_transformer()
+        self._fit_num_transformer()
 
 
     def get_train(self) -> pd.DataFrame:
@@ -205,6 +206,20 @@ class DatasetLoader:
     def get_data_transformer(self):
         return self.data_transformer
 
+    def _fit_num_transformer(self):
+        num_train = self._dataframes['train'][self.numerical_cols].to_numpy()
+        n_quantiles = max(min(num_train.shape[0] // 30, 1000), 10)
+        self.num_transformer = QuantileTransformer(
+            n_quantiles=n_quantiles,
+            output_distribution='normal',
+            random_state=0,
+            subsample=int(1e9),
+        )
+        self.num_transformer.fit(num_train)
+        return self.num_transformer
+
+    def get_num_transformer(self):
+        return self.num_transformer
 
 if __name__ == "__main__":
 

@@ -352,7 +352,7 @@ class TabDDPMModel(Model):
         self._cpu_weights: dict[str, torch.Tensor] | None = None
 
         self._max_step = 0
-        self._step_size = 100
+        self._step_size = train_main['steps']
 
     def fit(self):
         self.trainer.run_loop()

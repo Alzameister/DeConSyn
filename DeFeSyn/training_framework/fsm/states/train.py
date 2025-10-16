@@ -108,7 +108,7 @@ class TrainingState(BaseState):
         # Log loss to console
         if self.agent.loss_values is not None and not self.agent.loss_values.empty:
             # Print all losses
-            self.agent.log.info("Loss values: {}", self.agent.loss_values.to_dict(orient="records"))
+            self.agent.log.info("Loss values: {}", self.agent.loss_values.tail(10).to_dict(orient="records"))
             # Save to CSV
             run_dir = get_run_dir(
                 run_id=self.agent.run_id,

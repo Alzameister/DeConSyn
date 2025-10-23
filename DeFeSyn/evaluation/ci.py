@@ -1,3 +1,4 @@
+import os
 import re
 
 import numpy as np
@@ -82,15 +83,19 @@ def rank_models(df):
     return ranking
 
 
-it = 400
-runs_avg = get_avg_agents_df(it)
+it = 1000
+model_type = 'tabddpm'
+runs_avg = get_avg_agents_df(it, model_type)
 numeric_cols = runs_avg.select_dtypes(include='number').columns
 if runs_avg is None or runs_avg.empty:
     print("No data available for analysis.")
     raise SystemExit
 
+# Remove run == run-20251020-154840-7Agents-30Epochs-1000Iterations-ring-tabddpm
+runs_avg = runs_avg[runs_avg['run'] != 'run-20251020-154840-7Agents-30Epochs-1000Iterations-ring-tabddpm'].copy()
+
 # Compute differences between each method and the baseline
-baseline = get_baseline_df()
+baseline = get_baseline_df(model_type)
 methods = runs_avg[runs_avg['run'] != 'baseline_ctgan']
 group_diffs = {}
 for method in methods['run'].unique():
@@ -122,8 +127,12 @@ for group_id, metrics in group_diffs.items():
             "p_value_t": p_value_t,
         })
 df = pd.DataFrame(results)
-run_dir = get_runs_path()
+run_dir = get_runs_path(model_type)
+plots_dir = os.path.join(run_dir, "plots")
+os.makedirs(plots_dir, exist_ok=True)
 for metric in df["Metric"].unique():
+    if metric == 'AdversarialAccuracy':
+        print(metric)
     subset = df[df["Metric"] == metric].sort_values("Mean_t", ascending=False)
     if subset["Mean_t"].notna().sum() == 0:
         continue

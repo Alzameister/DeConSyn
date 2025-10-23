@@ -12,9 +12,10 @@ import torch
 from matplotlib import pyplot as plt
 import seaborn as sns
 from sklearn.decomposition import PCA
+from collections import defaultdict
 
 from DeFeSyn.data.data_loader import DatasetLoader
-from DeFeSyn.io.io import load_model_pickle, get_repo_root, get_config_dir
+from DeFeSyn.io.io import load_model_pickle, get_config_dir
 from DeFeSyn.models.tab_ddpm.lib import load_config
 from DeFeSyn.models.tab_ddpm.scripts.sample import sample
 from FEST.privacy_utility_framework.build.lib.privacy_utility_framework.metrics.utility_metrics.statistical.ks_test import \
@@ -46,6 +47,36 @@ from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_me
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.utility_metric_manager import \
     UtilityMetricManager
 
+def _is_tensor(x):
+    return isinstance(x, torch.Tensor)
+
+def per_layer_means(param_dict):
+    means = {}
+    for k, v in param_dict.items():
+        if isinstance(v, dict):
+            means[k] = per_layer_means(v)
+        else:
+            if _is_tensor(v):
+                means[k] = v.float().mean().item()
+            elif isinstance(v, np.ndarray):
+                means[k] = float(v.mean())
+            else:
+                try:
+                    arr = np.asarray(v)
+                    means[k] = float(arr.mean())
+                except Exception:
+                    means[k] = None
+    return means
+
+def _flatten_means(means, prefix=''):
+    flat = {}
+    for k, v in means.items():
+        key = f"{prefix}.{k}" if prefix else k
+        if isinstance(v, dict):
+            flat.update(_flatten_means(v, key))
+        else:
+            flat[key] = v
+    return flat
 
 class Evaluator:
     def __init__(
@@ -119,9 +150,59 @@ class Evaluator:
         if "Linkability" in self.metrics and self.link_aux_cols is None:
             raise ValueError("Auxiliary columns must be provided for Linkability metric.")
 
+        self.metrics = self.filter_metrics()
+
+    def filter_metrics(self) -> list[str]:
+        filtered_metrics = []
+        for metric in self.metrics:
+            metric_lower = metric.lower()
+            if metric_lower in ["dcr", "nndr", "adversarialaccuracy", "singlingout", "inference", "linkability",
+                                "disclosure"]:
+                result_file = self.privacy_dir / f"{metric}_result.txt"
+                # Disclosure writes two files
+                if metric_lower == "disclosure":
+                    repu_file = self.privacy_dir / "RepU_result.txt"
+                    disco_file = self.privacy_dir / "DiSCO_result.txt"
+                    if repu_file.exists() and disco_file.exists():
+                        continue
+                elif result_file.exists():
+                    continue
+            elif metric_lower in ["basicstats", "js", "ks", "wasserstein"]:
+                result_file = self.similarity_dir / f"{metric}_result.txt"
+                if result_file.exists():
+                    continue
+            elif metric_lower == "correlationpearson":
+                result_file = self.similarity_dir / "CorrelationPearson_result.txt"
+                if result_file.exists():
+                    continue
+            elif metric_lower == "correlationspearman":
+                result_file = self.similarity_dir / "CorrelationSpearman_result.txt"
+                if result_file.exists():
+                    continue
+            elif metric_lower == "pca":
+                result_file = self.similarity_dir / "PCA_Original_vs_Synthetic.png"
+                if result_file.exists():
+                    continue
+            elif metric_lower == "pca3d":
+                result_file = self.similarity_dir / "PCA3D_Original_vs_Synthetic.html"
+                if result_file.exists():
+                    continue
+            elif metric_lower == "consensus":
+                result_file = self.similarity_dir / "Consensus_result.txt"
+                if result_file.exists():
+                    continue
+            filtered_metrics.append(metric)
+        return filtered_metrics
+
     def evaluate(self) -> dict:
+        if self.metrics == []:
+            print("All specified metrics have existing results. Skipping evaluation.")
+            return {}
+
         loader = DatasetLoader(self.data_dir, self.categorical_cols)
         original_data = loader.get_train()
+
+
 
         if self.model_type.lower() == "tabddpm" and self.metrics != ['Consensus']:
             # Convert all integer columns in full_train to float
@@ -133,8 +214,8 @@ class Evaluator:
                 parent_dir=self.run_dir,
                 model_path=self.model_path,
                 real_data_path=self.data_dir + "/npy",
-                num_samples=100,#len(original_data),
-                batch_size=100,#config['sample']['batch_size'],
+                num_samples=10000,#len(original_data),
+                batch_size=10000,#config['sample']['batch_size'],
                 disbalance=config['sample'].get('disbalance', None),
                 **config['diffusion_params'],
                 model_type=config['model_type'],
@@ -693,6 +774,17 @@ class Evaluator:
             "V_rel": V_rel,
         }
 
+    def extract_run_info(self, run_dir: Path) -> str:
+        # Example: run-20251017-112942-10Agents-30Epochs-1000Iterations-full-tabddpm
+        name = run_dir.name
+        match = re.search(
+            r'run-\d+-\d+-(\d+)Agents-(\d+)Epochs-(\d+)Iterations-([^-]+)-([^-]+)', name
+        )
+        if not match:
+            raise ValueError("Run directory name does not match expected pattern.")
+        agents, epochs, iters, topology, model_type = match.groups()
+        return f"{agents}A {epochs}E {iters}R {topology.capitalize()} {model_type.capitalize()}"
+
     def _consensus(self, run_dir: Path) -> dict[str, str]:
         """
         Run consensus metric, save artifacts (plots + CSVs) under output_dir/Consensus,
@@ -700,8 +792,11 @@ class Evaluator:
         """
         out_dir = self.output_dir / "Consensus"
         out_dir.mkdir(parents=True, exist_ok=True)
-
-        res = self._consensus_curves_full(run_dir)
+        consensus_run_dir= run_dir.parent
+        run_name = self.extract_run_info(consensus_run_dir)
+        # Per layer means
+        self.plot_per_layer_consensus(consensus_run_dir, out_dir)
+        res = self._consensus_curves_full(consensus_run_dir)
         agents, iters = res["agents"], np.asarray(res["iters"])
 
         # ---------- Save CSV summaries ----------
@@ -741,8 +836,8 @@ class Evaluator:
             plt.plot(iters, res["E_rel"][ag], label=ag, alpha=0.9)
         plt.yscale("log")
         plt.xlabel("Round")
-        plt.ylabel("Relative consensus error")
-        plt.title(f"Per-agent consensus error (relative). Run: {run_dir.name}")
+        plt.ylabel("Relative distance")
+        plt.title(f"Per-agent relative distance to mean model parameters. {run_name}")
         plt.legend(fontsize="small", ncol=2)
         plt.tight_layout()
         plt.savefig(fig1)
@@ -753,8 +848,8 @@ class Evaluator:
         for ag in agents:
             plt.plot(iters, res["E_rel"][ag], label=ag, alpha=0.9)
         plt.xlabel("Round")
-        plt.ylabel("Relative consensus error")
-        plt.title(f"Per-agent consensus error (relative, linear scale). Run: {run_dir.name}")
+        plt.ylabel("Relative distance")
+        plt.title(f"Per-agent relative distance to mean model parameters. {run_name}")
         plt.legend(fontsize="small", ncol=2)
         plt.tight_layout()
         plt.savefig(fig1_linear)
@@ -765,8 +860,8 @@ class Evaluator:
         for ag in agents:
             plt.plot(iters, res["E_abs"][ag], label=ag, alpha=0.9)
         plt.xlabel("Round")
-        plt.ylabel("Absolute consensus error")
-        plt.title(f"Per-agent consensus error (absolute, linear scale). Run: {run_dir.name}")
+        plt.ylabel("Distance")
+        plt.title(f"Per-agent distance to mean model parameters. {run_name}")
         plt.legend(fontsize="small", ncol=2)
         plt.tight_layout()
         plt.savefig(fig1_abs_linear)
@@ -775,26 +870,39 @@ class Evaluator:
         # 2) Average errors
         fig2 = out_dir / "consensus-error-average.png"
         plt.figure()
-        plt.plot(iters, avg_df["E_rel_mean"], label="Mean (rel)", linewidth=2)
+        # plt.plot(iters, avg_df["E_rel_mean"], label="Mean (rel)", linewidth=2)
         plt.plot(iters, avg_df["E_abs_mean"], label="Mean (abs)", linewidth=2)
-        plt.yscale("log")
+        #plt.yscale("log")
         plt.xlabel("Round")
-        plt.ylabel("Consensus error")
-        plt.title(f"Average consensus error. {run_dir.name}")
+        plt.ylabel("Average distance")
+        plt.title(f"Average distance to mean model parameters. {run_name}")
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(fig2)
+        plt.clf()
+
+        fig2 = out_dir / "consensus-error-average-rel.png"
+        plt.figure()
+        plt.plot(iters, avg_df["E_rel_mean"], label="Mean (rel)", linewidth=2)
+        #plt.plot(iters, avg_df["E_abs_mean"], label="Mean (abs)", linewidth=2)
+        # plt.yscale("log")
+        plt.xlabel("Round")
+        plt.ylabel("Average relative distance")
+        plt.title(f"Average relative distance to mean model parameters. {run_name}")
         plt.legend()
         plt.tight_layout()
         plt.savefig(fig2)
         plt.clf()
 
         # 3) Diameter
-        fig3 = out_dir / "consensus-diameter.png"
+        fig3 = out_dir / "Max_pairwise_dist.png"
         plt.figure()
         plt.plot(iters, avg_df["D_rel"], label="Normalized", linewidth=2)
         plt.plot(iters, avg_df["D_abs"], label="Absolute", linestyle="--", linewidth=2)
-        plt.yscale("log")
+        #plt.yscale("log")
         plt.xlabel("Round")
-        plt.ylabel("Diameter (max pairwise dist)")
-        plt.title(f"Network diameter. {run_dir.name}")
+        plt.ylabel("Max pairwise distance")
+        plt.title(f"Max pairwise distance between agents model parameters. {run_name}")
         plt.legend()
         plt.tight_layout()
         plt.savefig(fig3)
@@ -807,12 +915,14 @@ class Evaluator:
         plt.plot(iters, avg_df["V_abs"], label="Absolute", linestyle="--", linewidth=2)
         plt.yscale("log")
         plt.xlabel("Round")
-        plt.ylabel("Potential Σ||θ_i−μ||²")
-        plt.title(f"Consensus potential. {run_dir.name}")
+        plt.title(f"Total squared distance to mean model parameters. {run_name}")
+        plt.ylabel("Sum of squared distances to mean parameters")
         plt.legend()
         plt.tight_layout()
         plt.savefig(fig4)
         plt.clf()
+
+
 
         # Return artifact paths (for inclusion in overall results)
         return {
@@ -824,6 +934,60 @@ class Evaluator:
             "diameter_plot": str(fig3),
             "potential_plot": str(fig4),
         }
+
+    def plot_per_layer_consensus(self, run_dir: Path, output_dir: Path):
+        # Find all agent dirs and iterations
+        agent_dirs = sorted(run_dir.glob("agent_*"))
+        per_layer = defaultdict(lambda: defaultdict(list))  # layer -> agent -> [means]
+
+        # Collect all iterations
+        iter_nums = None
+        for agent_dir in agent_dirs:
+            agent = agent_dir.name
+            model_files = sorted(agent_dir.glob("iter-*-weights.pt"))
+            agent_iters = []
+            for mf in model_files:
+                m = re.search(r"iter-(\d+)-weights\.pt$", mf.name)
+                if m:
+                    agent_iters.append((int(m.group(1)), mf))
+            agent_iters.sort()
+            if iter_nums is None:
+                iter_nums = [t for t, _ in agent_iters]
+            # For each iteration, compute per-layer means
+            for t, mf in agent_iters:
+                state = torch.load(mf, map_location="cpu")
+                means = per_layer_means(state)
+                flat_means = _flatten_means(means)
+                for layer, mean in flat_means.items():
+                    per_layer[layer][agent].append(mean)
+
+        # Plot for each layer
+        output_dir.mkdir(parents=True, exist_ok=True)
+        for layer, agent_means in per_layer.items():
+            plt.figure()
+            for agent, means in agent_means.items():
+                plt.plot(iter_nums, means, label=agent)
+            plt.xlabel("Iteration")
+            plt.ylabel("Mean")
+            plt.title(f"Consensus: Per-layer mean for {layer}")
+            plt.legend(fontsize="small")
+            plt.tight_layout()
+            out_path = output_dir / f"consensus_per_layer_{layer.replace('.', '_')}.png"
+            plt.savefig(out_path)
+            plt.close()
+
+    def per_layer_means(self, model_path=None):
+        """Compute per-layer means for a model."""
+        model_path = model_path or self.model_path
+        state = torch.load(model_path, map_location="cpu")
+        means = per_layer_means(state)
+        flat_means = _flatten_means(means)
+        # Save as CSV
+        out_path = self.output_dir / "per_layer_means.csv"
+        import pandas as pd
+        pd.Series(flat_means).to_csv(out_path)
+        print(f"Per-layer means saved to {out_path}")
+        return flat_means
 
     def _save_txt(self, metric_name: str, result,  base_dir: Path = None) -> None:
         base = base_dir if base_dir is not None else self.output_dir

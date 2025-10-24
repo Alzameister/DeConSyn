@@ -223,10 +223,11 @@ def plot_per_layer_consensus(run_dir: Path, output_dir: Path):
         axes[idx].axis("off")
 
     plt.tight_layout()
-    # out_path = output_dir / "consensus_per_layer_all_layers.png"
-    out_path = output_dir.parent.parent.parent / 'Consensus' / "consensus_per_layer_all_layers.png"
-    plt.savefig(out_path)
+    fig_path = output_dir / "consensus_per_layer_all_layers.png"
+    plt.savefig(fig_path)
     plt.close(fig)
+
+    return { "per_layer_plot": str(fig_path) }
 
 def plot_total_consensus(res: dict, out_dir: Path, run_name: str) -> dict[str, str]:
     agents, iters = res["agents"], np.asarray(res["iters"])
@@ -307,8 +308,7 @@ def plot_total_consensus(res: dict, out_dir: Path, run_name: str) -> dict[str, s
 
     plt.suptitle(f"Consensus metrics: {run_name}", fontsize=18)
     plt.tight_layout(rect=[0, 0.03, 1, 0.97])
-    fig_path = out_dir.parent.parent.parent  / 'Consensus' / "consensus_all_metrics.png"
-    #fig_path.mkdir(parents=True, exist_ok=True)
+    fig_path = out_dir / "consensus_all_metrics.png"
     plt.savefig(fig_path)
     plt.close(fig)
 
@@ -334,10 +334,23 @@ def consensus(run_dir: Path) -> dict[str, str]:
     Args:
         run_dir (Path): The directory containing agent subdirectories.
     """
-    out_dir = run_dir / 'results' / 'Consensus'
+    out_dir = run_dir.parent / "consensus"
     out_dir.mkdir(parents=True, exist_ok=True)
+
+    # Check if consensus has already been computed
+    existing_files = ['E_rel_per_agent.csv', 'E_abs_per_agent.csv', 'consensus_summary.csv', 'consensus_all_metrics.png']
+    if all((out_dir / fname).exists() for fname in existing_files):
+        print(f"Consensus metrics already exist in {out_dir}, skipping computation.")
+        return {
+            "E_rel_per_agent_csv": str(out_dir / 'E_rel_per_agent.csv'),
+            "E_abs_per_agent_csv": str(out_dir / 'E_abs_per_agent.csv'),
+            "summary_csv": str(out_dir / 'consensus_summary.csv'),
+            "all_metrics_plot": str(out_dir / 'consensus_all_metrics.png'),
+            "per_layer_plot": str(out_dir / 'consensus_per_layer_all_layers.png'),
+        }
 
     run_name = extract_run_info(run_dir.parent)
     res = get_consensus_metrics(run_dir.parent)
-    plot_per_layer_consensus(run_dir.parent, out_dir)
-    return plot_total_consensus(res, out_dir, run_name)
+    per_layer_res = plot_per_layer_consensus(run_dir.parent, out_dir)
+    total_res = plot_total_consensus(res, out_dir, run_name)
+    return {**per_layer_res, **total_res}

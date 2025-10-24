@@ -5,7 +5,6 @@ import torch
 import numpy as np
 import os
 
-import lib
 
 from DeFeSyn.models.tab_ddpm import GaussianMultinomialDiffusion
 from DeFeSyn.models.tab_ddpm.lib import Transformations, round_columns

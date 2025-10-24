@@ -56,7 +56,7 @@ class BaseState(State, ABC):
 
     # ---- Persistence helpers ----
     def _persist_weights(self, it: int):
-        should = (self.agent.current_iteration % 10 == 0) or (self.agent.current_iteration == self.agent.max_iterations)
+        should = (self.agent.current_iteration % 10 == 0) or (self.agent.current_iteration == self.agent.max_iterations) or (self.agent.current_iteration == 1)
         if not should:
             return
         p = make_path(

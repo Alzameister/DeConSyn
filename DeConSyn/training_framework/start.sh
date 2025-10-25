@@ -59,6 +59,7 @@ read -r -a EPOCHS_LIST      <<< "$2"
 read -r -a ITERATIONS_LIST  <<< "$3"
 read -r -a TOPOLOGY_LIST    <<< "$4"
 read -r -a MODEL_TYPE_LIST  <<< "$5"
+read -r K <<< "${6:-4}"
 
 if [[ ${#EPOCHS_LIST[@]} -ne ${#ITERATIONS_LIST[@]} ]]; then
   echo "ERROR: EPOCHS_LIST and ITERATIONS_LIST must have the same length."

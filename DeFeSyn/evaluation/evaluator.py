@@ -43,11 +43,6 @@ class Evaluator:
             synthetic_name: str = "CTGAN",
             keys: list[str] = None,
             target: str = None,
-            inf_aux_cols: list[str] = None,
-            secret: str = None,
-            regression: bool = False,
-            link_aux_cols: tuple[list[str], list[str]] = None,
-            control_frac: float = 0.3,
             seed: int = 42
     ):
         self.original_data: pd.DataFrame = original_data
@@ -63,11 +58,6 @@ class Evaluator:
         self.metrics: list[str] = metrics
         self.keys: list[str] = keys
         self.target: str = target
-        self.inf_aux_cols: list[str] = inf_aux_cols
-        self.secret: str = secret
-        self.regression: bool = regression
-        self.link_aux_cols: tuple[list[str], list[str]] = link_aux_cols
-        self.control_frac: float = control_frac
         self.seed: int = seed
 
         self.run_dir: Path = Path(run_dir)
@@ -79,7 +69,7 @@ class Evaluator:
             "CorrelationPearson", "CorrelationSpearman", "PCA",
             "Consensus"
         ], index=[self.synthetic_name])
-        self.privacy_metrics = ["DCR", "NNDR", "AdversarialAccuracy", "SinglingOut", "Inference", "Linkability", "Disclosure",
+        self.privacy_metrics = ["DCR", "NNDR", "AdversarialAccuracy", "Disclosure",
             "RepU", "DiSCO"]
         self.similarity_metrics = ["Mean", "Median", "Variance", "JS", "KS", "WASSERSTEIN",
             "CorrelationPearson", "CorrelationSpearman", "PCA"]
@@ -91,10 +81,6 @@ class Evaluator:
 
     def validate_requirements(self):
         # Validate that required parameters are set for specific metrics
-        if "Inference" in self.metrics and (self.inf_aux_cols is None or self.secret is None):
-            raise ValueError("Auxiliary columns and secret must be provided for Inference metric.")
-        if "Linkability" in self.metrics and self.link_aux_cols is None:
-            raise ValueError("Auxiliary columns must be provided for Linkability metric.")
         if "Disclosure" in self.metrics and (self.keys is None or self.target is None):
             raise ValueError("Keys and target must be provided for Disclosure metric.")
 

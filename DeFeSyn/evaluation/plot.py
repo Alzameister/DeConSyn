@@ -3,24 +3,26 @@ import os
 import pandas as pd
 import matplotlib.pyplot as plt
 
-def get_runs_path():
+def get_runs_path(model_type="ctgan"):
     # Get repo root
     repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
     runs_path = os.path.join(repo_root, 'runs')
+    if model_type:
+        runs_path = os.path.join(runs_path, model_type)
     if not os.path.exists(runs_path):
         return None
     return runs_path
 
-def get_runs_dir():
-    path = get_runs_path()
+def get_runs_dir(model_type="ctgan"):
+    path = get_runs_path(model_type=model_type)
     if path is None:
         return None
     return os.listdir(path)
 
-def get_runs_results_df(it: int = 500):
+def get_runs_results_df(it: int = None, model_type="ctgan"):
     # Get results of each agent in each run
-    runs_path = get_runs_path()
-    runs = get_runs_dir()
+    runs_path = get_runs_path(model_type=model_type)
+    runs = get_runs_dir(model_type)
     if runs is None:
         return None
 
@@ -28,7 +30,7 @@ def get_runs_results_df(it: int = 500):
     for run in runs:
         if not os.path.isdir(os.path.join(runs_path, run)):
             continue
-        run_path = os.path.join(get_runs_path(), run)
+        run_path = os.path.join(runs_path, run)
         # Get all subruns
         run_attempts = [d for d in os.listdir(run_path)]
 
@@ -41,13 +43,16 @@ def get_runs_results_df(it: int = 500):
             agents = [d for d in os.listdir(run_attempt_path) if d.startswith('agent_')]
             for agent in agents:
                 agent_path = os.path.join(run_attempt_path, agent)
-                results_file = f"results_iter_{it:04d}/results.csv"
+                if it:
+                    results_file = f"results-iter-{it:05d}/results.csv"
+                else:
+                    results_file = "results/results.csv"
                 result_file = os.path.join(agent_path, results_file)
                 if os.path.exists(result_file):
                     df = pd.read_csv(result_file)
                     df['run'] = run_attempt
                     df['agent'] = agent
-                    clean_disclosure(df)
+                    #clean_disclosure(df)
                     clean_basicstats(df)
                     results.append(df)
 
@@ -98,8 +103,8 @@ def safe_eval(x):
     return ast.literal_eval(x)
 
 
-def get_avg_agents_df(it: int = 500):
-    df = get_runs_results_df(it)
+def get_avg_agents_df(it: int = 500, model_type="ctgan"):
+    df = get_runs_results_df(it, model_type)
     if df is None or df.empty:
         return None
     numeric_cols = df.select_dtypes(include='number').columns
@@ -122,9 +127,10 @@ def get_avg_runs_df(it: int = 500):
     avg_df = avg_df.rename(columns={'run_base': 'run'})
     return avg_df
 
-def get_baseline_df():
-    runs_path = get_runs_path()
-    baseline_path = os.path.join(runs_path, 'baseline_ctgan', 'results', 'results.csv')
+def get_baseline_df(model_type="ctgan"):
+    runs_path = get_runs_path(model_type)
+    baseline_name = model_type + '_baseline'
+    baseline_path = os.path.join(runs_path, baseline_name, 'results', 'results.csv')
     if os.path.exists(baseline_path):
         return pd.read_csv(baseline_path)
     return None

@@ -4,6 +4,7 @@ import sys
 from pathlib import Path
 
 from DeFeSyn.evaluation.evaluator import Evaluator
+from DeFeSyn.models.tab_ddpm.lib.util import load_config
 
 
 def _csv_list(s):
@@ -78,7 +79,7 @@ def eval_agents_it(args, iterations):
 
 
         synthetic_name = format_run_name(run_dir_name)
-        # metrics = ['DCR', "Disclosure", 'NNDR', 'BasicStats', 'PCA']
+        # metrics = ['DCR', "Disclosure", 'NNDR', 'BasicStats', 'PCA', 'Consensus']
         metrics = ['Consensus']
         #metrics = ['AdversarialAccuracy', "JS", "KS", "CorrelationPearson", "CorrelationSpearman"]
 

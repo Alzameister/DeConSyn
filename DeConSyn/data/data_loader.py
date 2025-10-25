@@ -4,7 +4,7 @@ import numpy as np
 import pandas as pd
 from sklearn.preprocessing import OrdinalEncoder, QuantileTransformer
 
-from DeFeSyn.models.CTGAN.data_transformer import DataTransformer
+from DeConSyn.models.CTGAN.data_transformer import DataTransformer
 
 ADULT_CATEGORICAL_COLUMNS = [
         "workclass",
@@ -18,7 +18,7 @@ ADULT_CATEGORICAL_COLUMNS = [
 ]
 
 ADULT_TARGET = "income"
-ADULT_PATH = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/data/adult"
+ADULT_PATH = "/data/adult"
 
 
 class DatasetLoader:

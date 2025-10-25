@@ -6,11 +6,11 @@ import pandas as pd
 import seaborn as sns
 from sklearn.decomposition import PCA
 
-from DeFeSyn.data.data_loader import DatasetLoader, ADULT_PATH, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET
-from DeFeSyn.evaluation.consensus import consensus
-from DeFeSyn.io.io import get_config_dir, load_model_pickle
-from DeFeSyn.models.tab_ddpm.lib import load_config
-from DeFeSyn.models.tab_ddpm.scripts.sample import sample
+from DeConSyn.data.data_loader import DatasetLoader, ADULT_PATH, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET
+from DeConSyn.evaluation.consensus import consensus
+from DeConSyn.io.io import get_config_dir, load_model_pickle
+from DeConSyn.models.tab_ddpm.lib import load_config
+from DeConSyn.models.tab_ddpm.scripts.sample import sample
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.distance.adversarial_accuracy_class import \
     AdversarialAccuracyCalculator
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.distance.dcr_class import \
@@ -26,7 +26,7 @@ from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_me
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.ks_test import \
     KSCalculator
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.wasserstein import \
-    WassersteinCalculator, WassersteinMethod
+    WassersteinCalculator
 
 
 class Evaluator:
@@ -316,7 +316,7 @@ if __name__ == "__main__":
     original_data = loader.get_train()
     model_type = "ctgan"
     model_name = "iter-00300-model.pkl"
-    run_dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/runs/ctgan/4A-1E-500R-Full/run-20251024-150720-4Agents-1Epochs-300Iterations-full-ctgan/agent_00"
+    run_dir = "/runs/ctgan/4A-1E-500R-Full/run-20251024-150720-4Agents-1Epochs-300Iterations-full-ctgan/agent_00"
     metrics = ['PCA', 'Consensus', 'Correlation']
     evaluator = Evaluator(original_data=original_data, original_data_path=ADULT_PATH,
                           categorical_columns=ADULT_CATEGORICAL_COLUMNS + [ADULT_TARGET], agent_dir=run_dir,

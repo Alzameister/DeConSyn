@@ -4,9 +4,9 @@ import contextlib
 import torch
 from spade.template import Template
 
-from DeFeSyn.training_framework.communication.wait_response_behaviour import WaitResponseBehaviour
-from DeFeSyn.training_framework.fsm.fsm_behaviour import MT_INFORM, T_GOSSIP_WEIGHTS, clear_memory
-from DeFeSyn.training_framework.fsm.states.state import BaseState
+from DeConSyn.training_framework.communication.wait_response_behaviour import WaitResponseBehaviour
+from DeConSyn.training_framework.fsm.fsm_behaviour import MT_INFORM, T_GOSSIP_WEIGHTS, clear_memory
+from DeConSyn.training_framework.fsm.states.state import BaseState
 
 
 class FinalState(BaseState):

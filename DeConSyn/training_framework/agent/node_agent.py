@@ -11,19 +11,19 @@ from spade.agent import Agent
 from spade.template import Template
 from loguru import logger
 
-from DeFeSyn.models.CTGAN.data_transformer import DataTransformer
-from DeFeSyn.training_framework.consensus.consensus import Consensus
-from DeFeSyn.models.models import Model
-from DeFeSyn.training_framework.fsm.fsm_behaviour import NodeFSMBehaviour, TRAINING_STATE, START_STATE, PULL_STATE, PUSH_STATE, FINAL_STATE
-from DeFeSyn.training_framework.fsm.states.final import FinalState
-from DeFeSyn.training_framework.fsm.states.pull import PullState
-from DeFeSyn.training_framework.fsm.states.push import PushState
-from DeFeSyn.training_framework.fsm.states.train import TrainingState
-from DeFeSyn.training_framework.fsm.states.start import StartState
-from DeFeSyn.training_framework.communication.receive_behaviour import ReceiveBehaviour
-from DeFeSyn.training_framework.communication.barrier_behaviour import BarrierHelloBehaviour, BarrierAckRouter
-from DeFeSyn.training_framework.communication.presence_behaviour import PresenceBehaviour
-from DeFeSyn.io.io import get_repo_root
+from DeConSyn.models.CTGAN.data_transformer import DataTransformer
+from DeConSyn.training_framework.consensus.consensus import Consensus
+from DeConSyn.models.models import Model
+from DeConSyn.training_framework.fsm.fsm_behaviour import NodeFSMBehaviour, TRAINING_STATE, START_STATE, PULL_STATE, PUSH_STATE, FINAL_STATE
+from DeConSyn.training_framework.fsm.states.final import FinalState
+from DeConSyn.training_framework.fsm.states.pull import PullState
+from DeConSyn.training_framework.fsm.states.push import PushState
+from DeConSyn.training_framework.fsm.states.train import TrainingState
+from DeConSyn.training_framework.fsm.states.start import StartState
+from DeConSyn.training_framework.communication.receive_behaviour import ReceiveBehaviour
+from DeConSyn.training_framework.communication.barrier_behaviour import BarrierHelloBehaviour, BarrierAckRouter
+from DeConSyn.training_framework.communication.presence_behaviour import PresenceBehaviour
+from DeConSyn.io.io import get_repo_root
 
 
 @dataclass(frozen=True)

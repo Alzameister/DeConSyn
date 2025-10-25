@@ -3,7 +3,7 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-from DeFeSyn.data.data_loader import ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET
+from DeConSyn.data.data_loader import ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET
 
 
 class DataTransformer:

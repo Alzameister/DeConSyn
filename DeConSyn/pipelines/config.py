@@ -2,7 +2,7 @@ from pathlib import Path
 
 import tomli
 
-from DeFeSyn.models.tab_ddpm.lib import unpack_config
+from DeConSyn.models.tab_ddpm.lib import unpack_config
 
 
 def load_config(path: Path | str):

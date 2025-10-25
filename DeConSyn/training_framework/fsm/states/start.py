@@ -6,9 +6,9 @@ from typing import Iterable
 
 from spade.message import Message
 
-from DeFeSyn.training_framework.fsm.fsm_behaviour import MT_INFORM, T_BARRIER_HELLO, BARRIER_TOTAL_TIMEOUT, \
+from DeConSyn.training_framework.fsm.fsm_behaviour import MT_INFORM, T_BARRIER_HELLO, BARRIER_TOTAL_TIMEOUT, \
     HELLO_RESEND_SEC, HELLO_WAIT_TIMEOUT, TRAINING_STATE
-from DeFeSyn.training_framework.fsm.states.state import BaseState
+from DeConSyn.training_framework.fsm.states.state import BaseState
 
 
 class StartState(BaseState):

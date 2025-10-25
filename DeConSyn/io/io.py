@@ -6,7 +6,7 @@ import re
 
 import torch
 
-from DeFeSyn.models import CTGAN
+from DeConSyn.models import CTGAN
 
 REPO_MARKERS = {".git", "pyproject.toml", "poetry.lock", "setup.cfg", "setup.py"}
 torch.serialization.add_safe_globals([CTGAN])

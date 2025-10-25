@@ -3,9 +3,9 @@ import re
 import sys
 from pathlib import Path
 
-from DeFeSyn.data.data_loader import DatasetLoader
-from DeFeSyn.evaluation.evaluator import Evaluator
-from DeFeSyn.pipelines.config import load_config
+from DeConSyn.data.data_loader import DatasetLoader
+from DeConSyn.evaluation.evaluator import Evaluator
+from DeConSyn.pipelines.config import load_config
 
 def format_run_name(run_dir_name):
     parts = run_dir_name.split('-')

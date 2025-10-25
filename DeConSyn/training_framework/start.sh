@@ -118,7 +118,7 @@ run_once() {
 
   (
     cd "$PROJECT_ROOT"
-    chrt -r 10 "$PYTHON_EXEC" -m DeFeSyn.training_framework.start run \
+    chrt -r 10 "$PYTHON_EXEC" -m DeConSyn.training_framework.start run \
       --agents "$agents" \
       --epochs "$epochs" \
       --iterations "$iterations" \

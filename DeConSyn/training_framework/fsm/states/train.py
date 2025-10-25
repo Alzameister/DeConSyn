@@ -6,11 +6,11 @@ from typing import Optional, Dict, Any
 
 import torch
 
-from DeFeSyn.io.io import get_run_dir
-from DeFeSyn.models.models import Model, TabDDPMModel, CTGANModel
-from DeFeSyn.training_framework.fsm.fsm_behaviour import FINAL_STATE, clear_memory, PULL_STATE, discrete_cols_of, \
+from DeConSyn.io.io import get_run_dir
+from DeConSyn.models.models import Model, TabDDPMModel, CTGANModel
+from DeConSyn.training_framework.fsm.fsm_behaviour import FINAL_STATE, clear_memory, PULL_STATE, discrete_cols_of, \
     TrainSnapshot
-from DeFeSyn.training_framework.fsm.states.state import BaseState
+from DeConSyn.training_framework.fsm.states.state import BaseState
 
 
 class TrainingState(BaseState):

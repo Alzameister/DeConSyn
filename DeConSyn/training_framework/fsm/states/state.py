@@ -6,8 +6,8 @@ import torch
 from spade.behaviour import State
 from spade.message import Message
 
-from DeFeSyn.io.io import make_path, save_weights_pt, save_model_pickle
-from DeFeSyn.training_framework.fsm.fsm_behaviour import parse_float, MT_INFORM, T_BARRIER_HELLO, T_GOSSIP_REQ, \
+from DeConSyn.io.io import make_path, save_weights_pt, save_model_pickle
+from DeConSyn.training_framework.fsm.fsm_behaviour import parse_float, MT_INFORM, T_BARRIER_HELLO, T_GOSSIP_REQ, \
     T_GOSSIP_WEIGHTS, _bytes_len
 
 

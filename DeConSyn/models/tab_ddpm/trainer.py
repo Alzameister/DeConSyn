@@ -6,9 +6,9 @@ import torch
 import os
 import numpy as np
 import pandas as pd
-from DeFeSyn.models.tab_ddpm import GaussianMultinomialDiffusion
-from DeFeSyn.models.tab_ddpm.lib.data import Transformations, prepare_fast_dataloader, transform_dataset
-from DeFeSyn.models.tab_ddpm.scripts.utils_train import get_model, make_dataset, update_ema
+from DeConSyn.models.tab_ddpm import GaussianMultinomialDiffusion
+from DeConSyn.models.tab_ddpm.lib.data import Transformations, prepare_fast_dataloader
+from DeConSyn.models.tab_ddpm.scripts.utils_train import get_model, make_dataset, update_ema
 
 
 class Trainer:

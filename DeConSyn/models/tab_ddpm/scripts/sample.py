@@ -6,9 +6,9 @@ import numpy as np
 import os
 
 
-from DeFeSyn.models.tab_ddpm import GaussianMultinomialDiffusion
-from DeFeSyn.models.tab_ddpm.lib import Transformations, round_columns
-from DeFeSyn.models.tab_ddpm.scripts.utils_train import make_dataset, get_model
+from DeConSyn.models.tab_ddpm import GaussianMultinomialDiffusion
+from DeConSyn.models.tab_ddpm.lib import Transformations, round_columns
+from DeConSyn.models.tab_ddpm.scripts.utils_train import make_dataset, get_model
 
 
 def to_good_ohe(ohe, X):

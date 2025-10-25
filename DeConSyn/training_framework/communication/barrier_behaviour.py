@@ -1,6 +1,6 @@
 from spade.behaviour import CyclicBehaviour
 
-from DeFeSyn.training_framework.communication.presence_behaviour import PresenceBehaviour
+from DeConSyn.training_framework.communication.presence_behaviour import PresenceBehaviour
 
 
 class BarrierHelloBehaviour(CyclicBehaviour):

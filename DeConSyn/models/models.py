@@ -10,16 +10,16 @@ import os
 
 from category_encoders import OrdinalEncoder
 
-from DeFeSyn.data.data_loader import DatasetLoader, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET
-from DeFeSyn.models.CTGAN.synthesizers.ctgan import CTGAN
-from DeFeSyn.models.tab_ddpm import GaussianMultinomialDiffusion, MLPDiffusion, ResNetDiffusion
-from DeFeSyn.models.tab_ddpm.lib import load_config
-from DeFeSyn.models.tab_ddpm.lib.data import Transformations, prepare_fast_dataloader
-from DeFeSyn.models.tab_ddpm.scripts.utils_train import make_dataset
-from DeFeSyn.models.tab_ddpm.trainer import Trainer, train
-from DeFeSyn.io.serialization import encode_state_dict_pair_blob, decode_state_dict_pair_blob
-from DeFeSyn.io.snapshots import snapshot_state_dict_pair
-from DeFeSyn.io.io import get_repo_root, get_config_dir
+from DeConSyn.data.data_loader import DatasetLoader, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET
+from DeConSyn.models.CTGAN.synthesizers.ctgan import CTGAN
+from DeConSyn.models.tab_ddpm import GaussianMultinomialDiffusion, MLPDiffusion, ResNetDiffusion
+from DeConSyn.models.tab_ddpm.lib import load_config
+from DeConSyn.models.tab_ddpm.lib.data import Transformations, prepare_fast_dataloader
+from DeConSyn.models.tab_ddpm.scripts.utils_train import make_dataset
+from DeConSyn.models.tab_ddpm.trainer import Trainer, train
+from DeConSyn.io.serialization import encode_state_dict_pair_blob, decode_state_dict_pair_blob
+from DeConSyn.io.snapshots import snapshot_state_dict_pair
+from DeConSyn.io.io import get_repo_root, get_config_dir
 
 
 class Model(ABC):

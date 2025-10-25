@@ -3,11 +3,10 @@ from pathlib import Path
 
 import numpy as np
 
-from DeFeSyn.models.tab_ddpm import MLPDiffusion, ResNetDiffusion
-from DeFeSyn.models.tab_ddpm.lib import y_encode
-from DeFeSyn.models.tab_ddpm.lib.data import Transformations, read_pure_data, Dataset, transform_dataset
-from DeFeSyn.models.tab_ddpm.lib.util import load_json, TaskType
-from DeFeSyn.models.tab_ddpm.lib.data import change_val as change_value
+from DeConSyn.models.tab_ddpm import MLPDiffusion, ResNetDiffusion
+from DeConSyn.models.tab_ddpm.lib.data import Transformations, read_pure_data, Dataset, transform_dataset
+from DeConSyn.models.tab_ddpm.lib.util import load_json, TaskType
+from DeConSyn.models.tab_ddpm.lib.data import change_val as change_value
 
 
 def get_model(

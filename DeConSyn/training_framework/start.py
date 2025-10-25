@@ -10,13 +10,13 @@ import spade
 from loguru import logger
 from joblib import parallel_config
 
-from DeFeSyn.data.data_loader import DatasetLoader, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET
-from DeFeSyn.data.data_transformer import DataTransformer
-from DeFeSyn.logging.logger import init_logging
-from DeFeSyn.models.tab_ddpm.lib import load_config
-from DeFeSyn.training_framework.agent.node_agent import NodeAgent, NodeConfig, NodeData
-from DeFeSyn.utils.graph import Graph
-from DeFeSyn.utils.seed import set_global_seed
+from DeConSyn.data.data_loader import DatasetLoader, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET
+from DeConSyn.data.data_transformer import DataTransformer
+from DeConSyn.logging.logger import init_logging
+from DeConSyn.models.tab_ddpm.lib import load_config
+from DeConSyn.training_framework.agent.node_agent import NodeAgent, NodeConfig, NodeData
+from DeConSyn.utils.graph import Graph
+from DeConSyn.utils.seed import set_global_seed
 
 ADULT_PATH = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/05_Data/adult"
 ADULT_MANIFEST = "manifest.yaml"

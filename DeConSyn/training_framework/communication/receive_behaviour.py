@@ -6,7 +6,7 @@ from typing import Optional
 from spade.behaviour import CyclicBehaviour
 from spade.message import Message
 
-from DeFeSyn.training_framework.communication.presence_behaviour import PresenceBehaviour
+from DeConSyn.training_framework.communication.presence_behaviour import PresenceBehaviour
 
 
 class ReceiveBehaviour(CyclicBehaviour):

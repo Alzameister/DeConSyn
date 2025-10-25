@@ -7,7 +7,7 @@ from matplotlib import pyplot as plt
 from scipy import stats
 from scipy.stats import permutation_test
 
-from DeFeSyn.evaluation.plot import get_avg_agents_df, get_baseline_df, get_runs_path
+from DeConSyn.evaluation.plot import get_avg_agents_df, get_baseline_df, get_runs_path
 
 
 def extract_group(run_name):

@@ -3,8 +3,7 @@ import re
 import sys
 from pathlib import Path
 
-from DeFeSyn.evaluation.evaluator import Evaluator
-from DeFeSyn.models.tab_ddpm.lib.util import load_config
+from DeConSyn.evaluation.evaluator import Evaluator
 
 
 def _csv_list(s):

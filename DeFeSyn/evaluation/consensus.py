@@ -334,7 +334,7 @@ def consensus(run_dir: Path) -> dict[str, str]:
     Args:
         run_dir (Path): The directory containing agent subdirectories.
     """
-    out_dir = run_dir.parent / "consensus"
+    out_dir = run_dir / "consensus"
     out_dir.mkdir(parents=True, exist_ok=True)
 
     # Check if consensus has already been computed
@@ -349,8 +349,8 @@ def consensus(run_dir: Path) -> dict[str, str]:
             "per_layer_plot": str(out_dir / 'consensus_per_layer_all_layers.png'),
         }
 
-    run_name = extract_run_info(run_dir.parent)
-    res = get_consensus_metrics(run_dir.parent)
-    per_layer_res = plot_per_layer_consensus(run_dir.parent, out_dir)
+    run_name = extract_run_info(run_dir)
+    res = get_consensus_metrics(run_dir)
+    per_layer_res = plot_per_layer_consensus(run_dir, out_dir)
     total_res = plot_total_consensus(res, out_dir, run_name)
     return {**per_layer_res, **total_res}

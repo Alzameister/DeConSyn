@@ -15,7 +15,6 @@ from DeFeSyn.models.CTGAN.synthesizers.ctgan import CTGAN
 from DeFeSyn.models.tab_ddpm import GaussianMultinomialDiffusion, MLPDiffusion, ResNetDiffusion
 from DeFeSyn.models.tab_ddpm.lib import load_config
 from DeFeSyn.models.tab_ddpm.lib.data import Transformations, prepare_fast_dataloader
-from DeFeSyn.models.tab_ddpm.scripts.sample import sample
 from DeFeSyn.models.tab_ddpm.scripts.utils_train import make_dataset
 from DeFeSyn.models.tab_ddpm.trainer import Trainer, train
 from DeFeSyn.io.serialization import encode_state_dict_pair_blob, decode_state_dict_pair_blob
@@ -478,44 +477,53 @@ if __name__ == '__main__':
     os.makedirs(path, exist_ok=True)
     model_path = path / "model.pt"
 
-    model = TabDDPMModel(
+    model = CTGANModel(
         data=full_train,
         discrete_columns=discrete_cols_of(full_train),
-        real_data_path=real_data_path,
-        encoder=encoder,
-        device="cpu",
-        target=ADULT_TARGET,
-        config=config
+        epochs=300,
+        data_transformer=transformer,
+        device="cpu"
     )
-    model.fit_baseline(data_dir, real_data_path, config)
+    model.fit_baseline()
 
-    sample(
-        parent_dir=data_dir,
-        real_data_path=real_data_path,
-        num_samples=2000,
-        batch_size=2000,
-        disbalance=config['sample'].get('disbalance', None),
-        **config['diffusion_params'],
-        model_path=model_path,
-        model_type=config['model_type'],
-        model_params=config['model_params'],
-        T_dict=config['train']['T'],
-        num_numerical_features=config['num_numerical_features'],
-        device="cpu",
-        seed=0,
-        change_val=False
-    )
-
-    x_cat_train_p = path / 'X_cat_train.npy'
-    x_num_train_p = path / 'X_num_train.npy'
-    y_train_p = path / 'y_train.npy'
-
-    x_cat_train = np.load(x_cat_train_p, allow_pickle=True)
-    x_num_train = np.load(x_num_train_p, allow_pickle=True)
-    y_train = np.load(y_train_p, allow_pickle=True)
-
-    x_cat_train_pd = pd.DataFrame(x_cat_train)
-    x_num_train_pd = pd.DataFrame(x_num_train)
-    y_train_pd = pd.DataFrame(y_train)
-
-    print(x_cat_train_pd)
+    # model = TabDDPMModel(
+    #     data=full_train,
+    #     discrete_columns=discrete_cols_of(full_train),
+    #     real_data_path=real_data_path,
+    #     encoder=encoder,
+    #     device="cpu",
+    #     target=ADULT_TARGET,
+    #     config=config
+    # )
+    # model.fit_baseline(data_dir, real_data_path, config)
+    #
+    # sample(
+    #     parent_dir=data_dir,
+    #     real_data_path=real_data_path,
+    #     num_samples=2000,
+    #     batch_size=2000,
+    #     disbalance=config['sample'].get('disbalance', None),
+    #     **config['diffusion_params'],
+    #     model_path=model_path,
+    #     model_type=config['model_type'],
+    #     model_params=config['model_params'],
+    #     T_dict=config['train']['T'],
+    #     num_numerical_features=config['num_numerical_features'],
+    #     device="cpu",
+    #     seed=0,
+    #     change_val=False
+    # )
+    #
+    # x_cat_train_p = path / 'X_cat_train.npy'
+    # x_num_train_p = path / 'X_num_train.npy'
+    # y_train_p = path / 'y_train.npy'
+    #
+    # x_cat_train = np.load(x_cat_train_p, allow_pickle=True)
+    # x_num_train = np.load(x_num_train_p, allow_pickle=True)
+    # y_train = np.load(y_train_p, allow_pickle=True)
+    #
+    # x_cat_train_pd = pd.DataFrame(x_cat_train)
+    # x_num_train_pd = pd.DataFrame(x_num_train)
+    # y_train_pd = pd.DataFrame(y_train)
+    #
+    # print(x_cat_train_pd)

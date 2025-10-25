@@ -14,17 +14,17 @@ d_layers = [
     1024,
     512,
 ]
-dropout = 0.0
+dropout = 0.0 #0.1,0.2
 
 [diffusion_params]
-num_timesteps = 1000
+num_timesteps = 1000 #100
 gaussian_loss_type = "mse"
 
 [train.main]
-steps = 100
+steps = 1
 lr = 0.001809824563637657
 weight_decay = 0.0
-batch_size = 4096
+batch_size = 256 #4096 #256
 
 [train.T]
 seed = 0

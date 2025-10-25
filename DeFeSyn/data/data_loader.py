@@ -18,6 +18,8 @@ ADULT_CATEGORICAL_COLUMNS = [
 ]
 
 ADULT_TARGET = "income"
+ADULT_PATH = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/data/adult"
+
 
 class DatasetLoader:
     def __init__(self, dataset_dir: str, categorical_cols: list[str] = None, target: str = None):

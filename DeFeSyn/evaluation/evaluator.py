@@ -1,32 +1,16 @@
-import argparse
-import glob
-import os
-import pickle
-import re
-import sys
 from pathlib import Path
 
+import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-import torch
-from matplotlib import pyplot as plt
 import seaborn as sns
 from sklearn.decomposition import PCA
-from collections import defaultdict
 
-from DeFeSyn.data.data_loader import DatasetLoader
+from DeFeSyn.data.data_loader import DatasetLoader, ADULT_PATH, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET
 from DeFeSyn.evaluation.consensus import consensus
-from DeFeSyn.io.io import load_model_pickle, get_config_dir
+from DeFeSyn.io.io import get_config_dir, load_model_pickle
 from DeFeSyn.models.tab_ddpm.lib import load_config
 from DeFeSyn.models.tab_ddpm.scripts.sample import sample
-from FEST.privacy_utility_framework.build.lib.privacy_utility_framework.metrics.utility_metrics.statistical.ks_test import \
-    KSCalculator
-from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.attacks.inference_class import \
-    InferenceCalculator
-from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.attacks.linkability_class import \
-    LinkabilityCalculator
-from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.attacks.singlingout_class import \
-    SinglingOutCalculator
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.distance.adversarial_accuracy_class import \
     AdversarialAccuracyCalculator
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.distance.dcr_class import \
@@ -35,58 +19,28 @@ from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_me
     DisclosureCalculator
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.distance.nndr_class import \
     NNDRCalculator
-from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.privacy_metric_manager import \
-    PrivacyMetricManager
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.basic_stats import \
     BasicStatsCalculator
-from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.correlation import \
-    CorrelationMethod, CorrelationCalculator
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.js_similarity import \
     JSCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.ks_test import \
+    KSCalculator
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.wasserstein import \
     WassersteinCalculator, WassersteinMethod
-from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.utility_metric_manager import \
-    UtilityMetricManager
 
-def _is_tensor(x):
-    return isinstance(x, torch.Tensor)
-
-def per_layer_means(param_dict):
-    means = {}
-    for k, v in param_dict.items():
-        if isinstance(v, dict):
-            means[k] = per_layer_means(v)
-        else:
-            if _is_tensor(v):
-                means[k] = v.float().mean().item()
-            elif isinstance(v, np.ndarray):
-                means[k] = float(v.mean())
-            else:
-                try:
-                    arr = np.asarray(v)
-                    means[k] = float(arr.mean())
-                except Exception:
-                    means[k] = None
-    return means
-
-def _flatten_means(means, prefix=''):
-    flat = {}
-    for k, v in means.items():
-        key = f"{prefix}.{k}" if prefix else k
-        if isinstance(v, dict):
-            flat.update(_flatten_means(v, key))
-        else:
-            flat[key] = v
-    return flat
 
 class Evaluator:
     def __init__(
             self,
-            data_dir: str,
-            categorical_cols: list[str],
-            model_path: str,
-            output_dir: str,
-            metrics: list[str] = None,
+            original_data: pd.DataFrame,
+            original_data_path: str,
+            categorical_columns: list[str],
+            run_dir: str,
+            metrics: list[str],
+            model_type: str = "ctgan",
+            model_name: str = "ctgan.pkl",
+            dataset_name: str = "adult",
+            synthetic_name: str = "CTGAN",
             keys: list[str] = None,
             target: str = None,
             inf_aux_cols: list[str] = None,
@@ -94,820 +48,293 @@ class Evaluator:
             regression: bool = False,
             link_aux_cols: tuple[list[str], list[str]] = None,
             control_frac: float = 0.3,
-            original_name: str = "adult",
-            synthetic_name: str = "CTGAN",
-            model_type: str = "ctgan",
-            run_dir: str = None,
+            seed: int = 42
     ):
-        self.seed = 42
+        self.original_data: pd.DataFrame = original_data
+        self.data_dir: Path = Path(original_data_path)
+        self.categorical_columns: list[str] = categorical_columns
 
-        self.data_dir = data_dir
-        self.categorical_cols = categorical_cols
+        self.model_type: str = model_type
+        self.model_name: str = model_name
 
-        self.model_type = model_type
-        self.model_path = model_path
+        self.dataset_name: str = dataset_name
+        self.synthetic_name: str = synthetic_name
 
-        self.output_dir = Path(output_dir)
-        self.output_dir.mkdir(parents=True, exist_ok=True)
-        self.privacy_dir = self.output_dir / "Privacy"
-        self.privacy_dir.mkdir(parents=True, exist_ok=True)
-        self.similarity_dir = self.output_dir / "Similarity"
-        self.similarity_dir.mkdir(parents=True, exist_ok=True)
-        self.run_dir = Path(run_dir) if run_dir else None
+        self.metrics: list[str] = metrics
+        self.keys: list[str] = keys
+        self.target: str = target
+        self.inf_aux_cols: list[str] = inf_aux_cols
+        self.secret: str = secret
+        self.regression: bool = regression
+        self.link_aux_cols: tuple[list[str], list[str]] = link_aux_cols
+        self.control_frac: float = control_frac
+        self.seed: int = seed
 
-        self.original_name = original_name
-        self.synthetic_name = synthetic_name
-
-        self.results = pd.DataFrame(columns=[
-            "DCR", "NNDR", "AdversarialAccuracy", "SinglingOut", "Inference", "Linkability", "Disclosure",
-            "RepU", "DiSCO",
+        self.run_dir: Path = Path(run_dir)
+        self.model_path: Path = self.run_dir / self.model_name
+        self.results: pd.DataFrame = pd.DataFrame(columns=[
+            "DCR", "NNDR", "AdversarialAccuracy",
+            "RepU", "Disclosure",
             "Mean", "Median", "Variance", "JS", "KS", "WASSERSTEIN",
             "CorrelationPearson", "CorrelationSpearman", "PCA",
             "Consensus"
         ], index=[self.synthetic_name])
+        self.privacy_metrics = ["DCR", "NNDR", "AdversarialAccuracy", "SinglingOut", "Inference", "Linkability", "Disclosure",
+            "RepU", "DiSCO"]
+        self.similarity_metrics = ["Mean", "Median", "Variance", "JS", "KS", "WASSERSTEIN",
+            "CorrelationPearson", "CorrelationSpearman", "PCA"]
+        self.results_dir: Path = self.run_dir / "results"
+        self.results_file: Path = self.results_dir / "results.csv"
+        self.results_dir.mkdir(parents=True, exist_ok=True)
 
-        self.metrics = metrics if metrics is not None else [
-            "DCR", "NNDR", "AdversarialAccuracy", "Disclosure",
-            "BasicStats", "JS", "KS",
-            "CorrelationPearson", "CorrelationSpearman", "PCA", "PCA3D"
-        ]
+        self.validate_requirements()
 
-        # Disclosure
-        self.keys = keys
-        self.target = target
+    def validate_requirements(self):
+        # Validate that required parameters are set for specific metrics
+        if "Inference" in self.metrics and (self.inf_aux_cols is None or self.secret is None):
+            raise ValueError("Auxiliary columns and secret must be provided for Inference metric.")
+        if "Linkability" in self.metrics and self.link_aux_cols is None:
+            raise ValueError("Auxiliary columns must be provided for Linkability metric.")
         if "Disclosure" in self.metrics and (self.keys is None or self.target is None):
             raise ValueError("Keys and target must be provided for Disclosure metric.")
 
-        # Inference
-        self.inf_aux_cols = inf_aux_cols
-        self.secret = secret
-        self.regression = regression
-        if "Inference" in self.metrics and (self.inf_aux_cols is None or self.secret is None):
-            raise ValueError("Auxiliary columns and secret must be provided for Inference metric.")
+    def evaluate(self) -> pd.DataFrame:
+        self.get_calculated_metrics()
 
-        # Linkability
-        self.link_aux_cols = link_aux_cols
-        self.control_frac = control_frac
-        if "Linkability" in self.metrics and self.link_aux_cols is None:
-            raise ValueError("Auxiliary columns must be provided for Linkability metric.")
+        # If all metrics already covered, return results
+        if all(metric in self.results.columns and pd.notna(self.results.at[self.synthetic_name, metric]) for metric in self.metrics):
+            return self.results
 
-        self.metrics = self.filter_metrics()
+        if not self.metrics == ['Consensus']:
+            synthetic: pd.DataFrame = self.get_synthetic()
+            self.calculate_privacy_metrics(original_data, synthetic)
+            self.calculate_similarity_metrics(original_data, synthetic)
 
-    def filter_metrics(self) -> list[str]:
-        filtered_metrics = []
-        for metric in self.metrics:
-            metric_lower = metric.lower()
-            if metric_lower in ["dcr", "nndr", "adversarialaccuracy", "singlingout", "inference", "linkability",
-                                "disclosure"]:
-                result_file = self.privacy_dir / f"{metric}_result.txt"
-                # Disclosure writes two files
-                if metric_lower == "disclosure":
-                    repu_file = self.privacy_dir / "RepU_result.txt"
-                    disco_file = self.privacy_dir / "DiSCO_result.txt"
-                    if repu_file.exists() and disco_file.exists():
-                        continue
-                elif result_file.exists():
-                    continue
-            elif metric_lower in ["basicstats", "js", "ks", "wasserstein"]:
-                result_file = self.similarity_dir / f"{metric}_result.txt"
-                if result_file.exists():
-                    continue
-            elif metric_lower == "correlationpearson":
-                result_file = self.similarity_dir / "CorrelationPearson_result.txt"
-                if result_file.exists():
-                    continue
-            elif metric_lower == "correlationspearman":
-                result_file = self.similarity_dir / "CorrelationSpearman_result.txt"
-                if result_file.exists():
-                    continue
-            elif metric_lower == "pca":
-                result_file = self.similarity_dir / "PCA_Original_vs_Synthetic.png"
-                if result_file.exists():
-                    continue
-            elif metric_lower == "pca3d":
-                result_file = self.similarity_dir / "PCA3D_Original_vs_Synthetic.html"
-                if result_file.exists():
-                    continue
-            elif metric_lower == "consensus":
-                result_file = self.similarity_dir / "Consensus_result.txt"
-                if result_file.exists():
-                    continue
-            filtered_metrics.append(metric)
-        return filtered_metrics
+        if 'Consensus' in self.metrics:
+            consensus(self.run_dir.parent)
 
-    def evaluate(self) -> dict:
-        if self.metrics == []:
-            print("All specified metrics have existing results. Skipping evaluation.")
-            return {}
+        self.results.to_csv(self.results_file, index=False)
+        return self.results
 
-        loader = DatasetLoader(self.data_dir, self.categorical_cols)
-        original_data = loader.get_train()
+    def get_calculated_metrics(self):
+        """Checks if metrics have been calculated and saved in a file --> Append to results."""
+        if self.results_file.exists():
+            saved_results = pd.read_csv(self.results_file, index_col=0)
+            for metric in self.metrics:
+                if metric in saved_results.columns:
+                    self.results.at[self.synthetic_name, metric] = saved_results.at[self.synthetic_name, metric]
 
-
-
-        if self.model_type.lower() == "tabddpm" and self.metrics != ['Consensus']:
-            # Convert all integer columns in full_train to float
-            int_cols = original_data.select_dtypes(include=['int64']).columns
-            original_data[int_cols] = original_data[int_cols].astype('float64')
-            config = load_config(get_config_dir() / "config.toml")
-
-            sample(
-                parent_dir=self.run_dir,
-                model_path=self.model_path,
-                real_data_path=self.data_dir + "/npy",
-                num_samples=10000,#len(original_data),
-                batch_size=10000,#config['sample']['batch_size'],
-                disbalance=config['sample'].get('disbalance', None),
-                **config['diffusion_params'],
-                model_type=config['model_type'],
-                model_params=config['model_params'],
-                T_dict=config['train']['T'],
-                num_numerical_features=config['num_numerical_features'],
-                device="cpu",
-                seed=0,
-                change_val=False
-            )
-
-            x_cat_p = self.run_dir / 'X_cat_train.npy'
-            x_num_p = self.run_dir / 'X_num_train.npy'
-            y_p = self.run_dir / 'y_train.npy'
-
-            x_cat = np.load(x_cat_p, allow_pickle=True)
-            x_num = np.load(x_num_p, allow_pickle=True)
-            y = np.load(y_p, allow_pickle=True)
-
-
-            x_gen = np.concatenate([x_num, x_cat], axis=1)
-            synthetic = pd.DataFrame(x_gen, columns=original_data.columns.drop(self.target))
-            synthetic[self.target] = np.asarray(y).squeeze()
-
-            # Ensure categorical columns have the same dtype as original
-            for col in self.categorical_cols:
-                synthetic[col] = synthetic[col].astype(original_data[col].dtype)
-
-            # Ensure numerical are float
-            for col in original_data.columns:
-                if col not in self.categorical_cols and col != self.target:
-                    synthetic[col] = synthetic[col].astype('float64')
-        elif self.model_type.lower() == "ctgan" and self.metrics != ['Consensus']:
-            model = load_model_pickle(Path(self.model_path))
-            #synthetic = model.sample(len(original_data), self.seed)
-            synthetic = model.sample(10_000, self.seed)
-
-        if self.metrics != ['Consensus']:
-            privacy_res = self.privacy_metrics(original_data, synthetic)
-            utility_res = self.utility_metrics(original_data, synthetic)
-            artifacts = self.extras(original_data, synthetic)
+    def get_synthetic(self) -> pd.DataFrame:
+        if self.model_type == "ctgan":
+            return self.load_ctgan()
+        elif self.model_type == "tabddpm":
+            return self.load_tabddpm()
         else:
-            privacy_res = {}
-            utility_res = {}
-            artifacts = self.extras(original_data, None)
+            raise ValueError(f"Unsupported model type: {self.model_type}")
 
-        results_path = os.path.join(self.output_dir, "results.csv")
-        if os.path.exists(results_path):
-            existing = pd.read_csv(results_path, index_col=0)
-            self.results.update(existing)
-        self.results.to_csv(results_path)
-        result = {"privacy": privacy_res, "utility": utility_res, "artifacts": artifacts}
-        p = self.output_dir / "results.txt"
-        with open(p, "w", encoding="utf-8") as f:
-            f.write(str(result))
-        return result
+    def load_tabddpm(self) -> pd.DataFrame:
+        int_cols = self.original_data.select_dtypes(include=['int64']).columns
+        self.original_data[int_cols] = self.original_data[int_cols].astype('float64')
+        config = load_config(get_config_dir() / self.dataset_name / "config.toml")
+
+        sample(
+            parent_dir=self.run_dir,
+            model_path=self.model_path,
+            real_data_path=str(self.data_dir) + "/npy",
+            num_samples=10000,  # len(original_data),
+            batch_size=10000,  # config['sample']['batch_size'],
+            disbalance=config['sample'].get('disbalance', None),
+            **config['diffusion_params'],
+            model_type=config['model_type'],
+            model_params=config['model_params'],
+            T_dict=config['train']['T'],
+            num_numerical_features=config['num_numerical_features'],
+            device="cpu",
+            seed=0,
+            change_val=False
+        )
+
+        x_cat_p = self.run_dir / 'X_cat_train.npy'
+        x_num_p = self.run_dir / 'X_num_train.npy'
+        y_p = self.run_dir / 'y_train.npy'
+
+        x_cat = np.load(x_cat_p, allow_pickle=True)
+        x_num = np.load(x_num_p, allow_pickle=True)
+        y = np.load(y_p, allow_pickle=True)
+
+        x_gen = np.concatenate([x_num, x_cat], axis=1)
+        synthetic = pd.DataFrame(x_gen, columns=original_data.columns.drop(self.target))
+        synthetic[self.target] = np.asarray(y).squeeze()
+
+        # Ensure categorical columns have the same dtype as original
+        for col in self.categorical_columns:
+            synthetic[col] = synthetic[col].astype(original_data[col].dtype)
+
+        # Ensure numerical are float
+        for col in original_data.columns:
+            if col not in self.categorical_columns and col != self.target:
+                synthetic[col] = synthetic[col].astype('float64')
+
+        return synthetic
+
+    def load_ctgan(self) -> pd.DataFrame:
+        model = load_model_pickle(Path(self.model_path))
+        return model.sample(10_000, self.seed)
+
+    def calculate_privacy_metrics(self, original: pd.DataFrame, synthetic: pd.DataFrame):
+        print("Calculating privacy metrics...")
+        # Only go through self.metrics that are in privacy_metrics
+        for metric in self.metrics:
+            if metric in self.privacy_metrics and pd.isna(self.results.at[self.synthetic_name, metric]):
+                print(f"Calculating {metric}...")
+                if metric == "DCR":
+                    dcr_calculator = DCRCalculator(original=original, synthetic=synthetic,
+                                                   original_name=self.dataset_name, synthetic_name=self.synthetic_name)
+                    dcr_value = dcr_calculator.evaluate()
+                    self.results.at[self.synthetic_name, "DCR"] = dcr_value
+                if metric == "NNDR":
+                    nndr_calculator = NNDRCalculator(original=original, synthetic=synthetic,
+                                                     original_name=self.dataset_name, synthetic_name=self.synthetic_name)
+                    nndr_value = nndr_calculator.evaluate()
+                    self.results.at[self.synthetic_name, "NNDR"] = nndr_value
+                if metric == "AdversarialAccuracy":
+                    aa_calculator = AdversarialAccuracyCalculator(original=original, synthetic=synthetic,
+                                                                  original_name=self.dataset_name, synthetic_name=self.synthetic_name)
+                    aa_value = aa_calculator.evaluate()
+                    self.results.at[self.synthetic_name, "AdversarialAccuracy"] = aa_value
+                if metric == "Disclosure":
+                    disco_calculator = DisclosureCalculator(original=original, synthetic=synthetic,
+                                                            original_name=self.dataset_name, synthetic_name=self.synthetic_name,
+                                                            keys=self.keys, target=self.target)
+                    repu_value, disco_value = disco_calculator.evaluate()
+                    self.results.at[self.synthetic_name, "RepU"] = repu_value
+                    self.results.at[self.synthetic_name, "DiSCO"] = disco_value
+
+        print("Calculated Privacy Metrics:")
+        for metric in self.privacy_metrics:
+            if metric in self.metrics:
+                value = self.results.at[self.synthetic_name, metric]
+                print(f"{metric}: {value}")
+
+    def calculate_similarity_metrics(self, original: pd.DataFrame, synthetic: pd.DataFrame):
+        print("Calculating similarity metrics...")
+        # Only go through self.metrics that are in similarity_metrics
+        for metric in self.metrics:
+            print(f"Calculating {metric}...")
+            if metric == "BasicStats":
+                if pd.isna(self.results.at[self.synthetic_name, "Mean"]):
+                    basicstats_calculator = BasicStatsCalculator(original=original, synthetic=synthetic,
+                                                                 original_name=self.dataset_name, synthetic_name=self.synthetic_name)
+                    stats_results = basicstats_calculator.evaluate()
+                    for stat_name, stat_value in stats_results.items():
+                        self.results.at[self.synthetic_name, stat_name.capitalize()] = stat_value
+            elif metric == "Correlation" and pd.isna(self.results.at[self.synthetic_name, "CorrelationPearson"]):
+                self.calculate_correlation(original, synthetic)
+            elif metric in self.similarity_metrics and pd.isna(self.results.at[self.synthetic_name, metric]):
+                if metric == "JS":
+                    js_calculator = JSCalculator(original=original, synthetic=synthetic,
+                                                 original_name=self.dataset_name, synthetic_name=self.synthetic_name)
+                    js_value = js_calculator.evaluate()
+                    self.results.at[self.synthetic_name, "JS"] = js_value
+                if metric == "KS":
+                    ks_calculator = KSCalculator(original=original, synthetic=synthetic,
+                                                 original_name=self.dataset_name, synthetic_name=self.synthetic_name)
+                    ks_value = ks_calculator.evaluate()
+                    self.results.at[self.synthetic_name, "KS"] = ks_value
+                if metric == "WASSERSTEIN":
+                    wasserstein_calculator = WassersteinCalculator(original=original, synthetic=synthetic,
+                                                                   original_name=self.dataset_name, synthetic_name=self.synthetic_name)
+                    # metric=WassersteinMethod.SINKHORN, n_iterations=5, n_samples=500 maybe
+                    wasserstein_value = wasserstein_calculator.evaluate()
+                    self.results.at[self.synthetic_name, "WASSERSTEIN"] = wasserstein_value
+                if metric == "PCA":
+                    self.calculate_pca(original, synthetic)
 
 
-    def privacy_metrics(self, original: pd.DataFrame, synthetic: pd.DataFrame) -> dict:
-        privacy_res = {}
-        print("Running privacy metrics...")
-        for name in self.metrics:
-            print(name)
-            if name == "DCR":
-                if (self.privacy_dir / "DCR_result.txt").exists():
-                    print("DCR result already exists, skipping computation.")
-                    continue
-                r = DCRCalculator(original=original, synthetic=synthetic,
-                                  original_name=self.original_name, synthetic_name=self.synthetic_name).evaluate()
-                privacy_res[name] = r
-                self._save_txt(name, r, self.privacy_dir)
-                print(r)
-                # Save to self.results dataframe. Row is model name, col is metric name
-                self.results.at[self.synthetic_name, "DCR"] = r if isinstance(r, float) else r.get("DCR", np.nan)
-            if name == "NNDR":
-                if (self.privacy_dir / "NNDR_result.txt").exists():
-                    print("NNDR result already exists, skipping computation.")
-                    continue
-                try:
-                    r = NNDRCalculator(original=original, synthetic=synthetic,
-                                       original_name=self.original_name, synthetic_name=self.synthetic_name).evaluate()
-                except Exception as e:
-                    print("NNDR calculation failed:", e)
-                    continue
-                privacy_res[name] = r
-                self._save_txt(name, r, self.privacy_dir)
-                self.results.at[self.synthetic_name, "NNDR"] = r if isinstance(r, float) else r.get("NNDR", np.nan)
-                print(r)
-            elif name == "AdversarialAccuracy":
-                if (self.privacy_dir / "AdversarialAccuracy_result.txt").exists():
-                    print("AdversarialAccuracy result already exists, skipping computation.")
-                    continue
-                try:
-                    r = AdversarialAccuracyCalculator(original=original, synthetic=synthetic,
-                                                      original_name=self.original_name,
-                                                      synthetic_name=self.synthetic_name).evaluate()
-                except Exception as e:
-                    print("AdversarialAccuracy calculation failed:", e)
-                    continue
-                privacy_res[name] = r
-                self._save_txt(name, r, self.privacy_dir)
-                self.results.at[self.synthetic_name, "AdversarialAccuracy"] = r if isinstance(r, float) else r.get(
-                    "AdversarialAccuracy", np.nan)
-                print(r)
-            elif name == "SinglingOut":
-                if (self.privacy_dir / "SinglingOut_result.txt").exists():
-                    print("SinglingOut result already exists, skipping computation.")
-                    continue
-                r = SinglingOutCalculator(original=original, synthetic=synthetic,
-                                          original_name=self.original_name,
-                                          synthetic_name=self.synthetic_name).evaluate()
-                privacy_res[name] = r
-                self.results.at[self.synthetic_name, "SinglingOut"] = r.value if isinstance(r.value, float) else r.get(
-                    "SinglingOut", np.nan)
-                self._save_txt(name, r, self.privacy_dir)
-                print(r)
-            elif name == "Inference":
-                if (self.privacy_dir / "Inference_result.txt").exists():
-                    print("Inference result already exists, skipping computation.")
-                    continue
-                r = InferenceCalculator(original=original, synthetic=synthetic, aux_cols=self.inf_aux_cols,
-                                        secret=self.secret, regression=self.regression,
-                                        original_name=self.original_name, synthetic_name=self.synthetic_name).evaluate()
-                privacy_res[name] = r
-                self.results.at[self.synthetic_name, "Inference"] = r.value if isinstance(r.value, float) else r.get(
-                    "Inference", np.nan)
-                self._save_txt(name, r, self.privacy_dir)
-                print(r)
-            elif name == "Linkability":
-                if (self.privacy_dir / "Linkability_result.txt").exists():
-                    print("Linkability result already exists, skipping computation.")
-                    continue
-                control_frac = 0.3
-                link_control_df = original.sample(frac=control_frac, random_state=self.seed)
-                link_original_train_df = original.drop(link_control_df.index).reset_index(drop=True)
-                link_control_df = link_control_df.reset_index(drop=True)
-                r = LinkabilityCalculator(original=link_original_train_df, synthetic=synthetic,
-                                          aux_cols=self.link_aux_cols, control=link_control_df,
-                                          original_name=self.original_name,
-                                          synthetic_name=self.synthetic_name).evaluate()
-                privacy_res[name] = r
-                self.results.at[self.synthetic_name, "Linkability"] = r.value if isinstance(r.value, float) else r.get(
-                    "Linkability", np.nan)
-                self._save_txt(name, r, self.privacy_dir)
-                print(r)
-            elif name == "Disclosure":
-                if (self.privacy_dir / "DiSCO_result.txt").exists() and (self.privacy_dir / "RepU_result.txt").exists():
-                    print("Disclosure result already exists, skipping computation.")
-                    continue
-                discoCalc = DisclosureCalculator(original=original, synthetic=synthetic, keys=self.keys,
-                                                 target=self.target,
-                                                 original_name=self.original_name, synthetic_name=self.synthetic_name)
-                res = discoCalc.evaluate()
-                privacy_res[name] = res
-                repU, disco = res
-                self.results.at[self.synthetic_name, "RepU"] = repU
-                self.results.at[self.synthetic_name, "DiSCO"] = disco
-                self._save_txt("RepU", repU, self.privacy_dir)
-                self._save_txt("DiSCO", disco, self.privacy_dir)
-                print(res)
+        print("Calculated Similarity Metrics:")
+        for metric in self.similarity_metrics:
+            if metric in self.metrics:
+                value = self.results.at[self.synthetic_name, metric]
+                print(f"{metric}: {value}")
 
-        return privacy_res
+    def calculate_correlation(self, original: pd.DataFrame, synthetic: pd.DataFrame):
+        output_dir = self.results_dir / 'Correlation'
+        output_dir.mkdir(parents=True, exist_ok=True)
+        original_numeric = original.select_dtypes(include=[np.number])
+        synthetic_numeric = synthetic.select_dtypes(include=[np.number])
+        # Pearson
+        pearson_corr = original_numeric.corr(method='pearson')
+        synthetic_pearson_corr = synthetic_numeric.corr(method='pearson')
+        pearson_diff = np.abs(pearson_corr - synthetic_pearson_corr)
+        pearson_mean_diff = np.mean(pearson_diff)
+        self.results.at[self.synthetic_name, "CorrelationPearson"] = pearson_mean_diff
 
-    def utility_metrics(self, original: pd.DataFrame, synthetic: pd.DataFrame) -> dict:
-        utility_res = {}
-        print("Running utility metrics...")
-        for name in self.metrics:
-            if name == "BasicStats":
-                if (self.similarity_dir / "BasicStats_result.txt").exists():
-                    print("BasicStats result already exists, skipping computation.")
-                    continue
-                r = BasicStatsCalculator(original=original, synthetic=synthetic,
-                                         original_name=self.original_name,
-                                         synthetic_name=self.synthetic_name).evaluate()
-                utility_res[name] = r
-                mean = r['mean']
-                median = r['median']
-                variance = r['var']
-                self.results.at[self.synthetic_name, "Mean"] = mean
-                self.results.at[self.synthetic_name, "Variance"] = variance
-                self.results.at[self.synthetic_name, "Median"] = median
-                self._save_txt(name, r, self.similarity_dir)
-                print(r)
-            elif name == "JS":
-                if (self.similarity_dir / "JS_result.txt").exists():
-                    print("JS result already exists, skipping computation.")
-                    continue
-                r = JSCalculator(original=original, synthetic=synthetic,
-                                 original_name=self.original_name, synthetic_name=self.synthetic_name).evaluate()
-                utility_res[name] = r
-                self.results.at[self.synthetic_name, "JS"] = r
-                self._save_txt(name, r, self.similarity_dir)
-                print(r)
-            elif name == "KS":
-                if (self.similarity_dir / "KS_result.txt").exists():
-                    print("KS result already exists, skipping computation.")
-                    continue
-                r = KSCalculator(original=original, synthetic=synthetic,
-                                 original_name=self.original_name, synthetic_name=self.synthetic_name).evaluate()
-                utility_res[name] = r
-                self.results.at[self.synthetic_name, "KS"] = r
-                self._save_txt(name, r, self.similarity_dir)
-                print(r)
-            elif name == "WASSERSTEIN":
-                if (self.similarity_dir / "WASSERSTEIN_result.txt").exists():
-                    print("WASSERSTEIN result already exists, skipping computation.")
-                    continue
-                wasserstein = WassersteinCalculator(original=original, synthetic=synthetic,
-                                                    original_name=self.original_name,
-                                                    synthetic_name=self.synthetic_name)
-                r = wasserstein.evaluate(metric=WassersteinMethod.SINKHORN, n_iterations=5, n_samples=500)
-                utility_res[name] = r
-                self.results.at[self.synthetic_name, "WASSERSTEIN"] = r
-                self._save_txt(name, r, self.similarity_dir)
-                print(r)
-
-    def extras(self, original: pd.DataFrame, synthetic: pd.DataFrame) -> dict:
-        artifacts = {}
-        if "CorrelationPearson" in self.metrics:
-            if (synthetic is None) or (self.similarity_dir / "CorrelationPearson_result.txt").exists():
-                print("CorrelationPearson result already exists or synthetic data not provided, skipping computation.")
-                return artifacts
-            print("  CorrelationPearson...")
-            artifacts.update(
-                self._correlation(original, synthetic, CorrelationMethod.PEARSON, "CorrelationPearson"))
-        if "CorrelationSpearman" in self.metrics:
-            if (synthetic is None) or (self.similarity_dir / "CorrelationSpearman_result.txt").exists():
-                print("CorrelationSpearman result already exists or synthetic data not provided, skipping computation.")
-                return artifacts
-            print("  CorrelationSpearman...")
-            artifacts.update(
-                self._correlation(original, synthetic, CorrelationMethod.SPEARMAN, "CorrelationSpearman"))
-        if "PCA" in self.metrics:
-            if (synthetic is None) or (self.similarity_dir / "PCA_Original_vs_Synthetic.png").exists():
-                print("PCA result already exists or synthetic data not provided, skipping computation.")
-                return artifacts
-            print("  PCA...")
-            artifacts["PCA"] = str(self._pca(original, synthetic))
-        if "PCA3D" in self.metrics:
-            if (synthetic is None) or (self.similarity_dir / "PCA3D_Original_vs_Synthetic.html").exists():
-                print("PCA3D result already exists or synthetic data not provided, skipping computation.")
-                return artifacts
-            print("  PCA3D...")
-            artifacts["PCA3D"] = str(self._pca_3d(original, synthetic))
-        if "Consensus" in self.metrics:
-            if (self.similarity_dir / "Consensus_result.txt").exists():
-                print("Consensus result already exists, skipping computation.")
-                return artifacts
-            print("  Consensus...")
-            if not self.run_dir:
-                raise ValueError(
-                    "Consensus metric requires --run-dir pointing to the run folder that contains agent_* subdirs.")
-            artifacts["Consensus"] = consensus(self.run_dir)
-
-    def evaluate_iterations(self, gap: int = 100):
-        """
-        Evaluate privacy and statistical metrics at checkpoints
-        Parameters
-        ----------
-        gap : int
-            Interval between iterations to evaluate (e.g., every 50 iters)
-
-        Returns
-        -------
-
-        """
-        base_dir = self.run_dir / "agent_00"
-        pattern = base_dir / "iter-*-model.pkl"
-        files = sorted(glob.glob(str(pattern)))
-        iterations = []
-
-        for p in files:
-            pth = Path(p)
-            m = re.search(r"iter-(\d+)-model\.pkl$", pth.name)
-            if not m:
-                continue
-            t = int(m.group(1))
-            if t % gap != 0:
-                continue
-            iterations.append((t, pth))
-
-        if not iterations:
-            raise ValueError(f"No iteration checkpoints found under {base_dir}")
-
-        print(f"Found {len(iterations)} checkpoints to evaluate (every {gap} iters).")
-
-        iterations.sort(key=lambda x: x[0])
-        it_root = self.output_dir / "iterations"
-        it_root.mkdir(parents=True, exist_ok=True)
-
-        all_privacy, all_utility = {}, {}
-        metrics = [m for m in self.metrics if m.lower() != "consensus"]
-        for t, pth in iterations:
-            print(f"Iteration {t}...")
-            out_dir = it_root / f"iter-{t:05d}"
-            out_dir.mkdir(parents=True, exist_ok=True)
-
-            eval_i = Evaluator(
-                manifest_path=self.manifest_path,
-                model_path=str(pth),
-                output_dir=str(out_dir),
-                original_name=self.original_name,
-                synthetic_name=self.synthetic_name,
-                metrics=metrics,
-                keys=self.keys,
-                target=self.target,
-                inf_aux_cols=self.inf_aux_cols,
-                secret=self.secret,
-                regression=self.regression,
-                link_aux_cols=self.link_aux_cols,
-                control_frac=self.control_frac,
-                run_dir=None
-            )
-            eval_i.seed = self.seed
-            res = eval_i.evaluate()
-            all_privacy[t] = res["privacy"]
-            all_utility[t] = res["utility"]
-            print(f"  Privacy: {res['privacy']}")
-            print(f"  Utility: {res['utility']}")
-            p_priv = out_dir / "privacy.txt"
-            p_util = out_dir / "utility.txt"
-            with open(p_priv, "w", encoding="utf-8") as f:
-                f.write(str(res["privacy"]))
-            with open(p_util, "w", encoding="utf-8") as f:
-                f.write(str(res["utility"]))
-
-        return all_privacy, all_utility
-
-    # --- helpers ---
-    @staticmethod
-    def _eval_privacy(metric):
-        m = PrivacyMetricManager()
-        m.add_metric(metric)
-        return m.evaluate_all()
-
-    @staticmethod
-    def _eval_utility(metric):
-        m = UtilityMetricManager()
-        m.add_metric(metric)
-        return m.evaluate_all()
-
-    def _correlation(self, full_train, synthetic, method: CorrelationMethod, label: str) -> dict[str, str]:
-        metric = CorrelationCalculator(full_train, synthetic, self.original_name, self.synthetic_name)
-        score = metric.evaluate(method=method)
-        with open(self.similarity_dir / f"{label}_result.txt", "w") as f:
-            f.write(f"{label}: {score}\n")
-
-        orig_df, syn_df = metric.correlation_pairs(method=method)
-        p_orig_csv = self.similarity_dir / f"{label}_original_correlation.csv"
-        p_syn_csv = self.similarity_dir / f"{label}_synthetic_correlation.csv"
-        orig_df.to_csv(p_orig_csv, index=False)
-        syn_df.to_csv(p_syn_csv, index=False)
-
-        # quick heatmaps
-        plt.figure(figsize=(9, 7))
-        sns.heatmap(orig_df, annot=True, fmt=".2f", cmap="coolwarm")
-        plt.title(f"Original ({method.name.title()})")
-        p1 = self.similarity_dir / f"{label}_original_heatmap.png"
-        plt.savefig(p1)
-        plt.clf()
-        plt.figure(figsize=(9, 7))
-        sns.heatmap(syn_df, annot=True, fmt=".2f", cmap="coolwarm")
-        plt.title(f"Synthetic ({method.name.title()})")
-        p2 = self.similarity_dir / f"{label}_synthetic_heatmap.png"
-        plt.savefig(p2)
+        # Save original, synthetic and heatmap of differences
+        pearson_corr.to_csv(output_dir / 'original_pearson_corr.csv')
+        synthetic_pearson_corr.to_csv(output_dir / 'synthetic_pearson_corr.csv')
+        pearson_diff.to_csv(output_dir / 'pearson_correlation_difference.csv')
+        diff_plot_path = output_dir / 'pearson_correlation_difference_heatmap.png'
+        plt.figure(figsize=(12, 10))
+        sns.heatmap(pearson_diff, annot=True, fmt=".2f", cmap='viridis')
+        plt.title('Pearson Correlation Difference Heatmap')
+        plt.savefig(diff_plot_path)
         plt.clf()
 
-        return {
-            f"{label}_score": str(self.similarity_dir / f"{label}_result.txt"),
-            f"{label}_orig_csv": str(p_orig_csv),
-            f"{label}_syn_csv": str(p_syn_csv),
-            f"{label}_orig_heatmap": str(p1),
-            f"{label}_syn_heatmap": str(p2),
-        }
+        # Spearman
+        spearman_corr = original_numeric.corr(method='spearman')
+        synthetic_spearman_corr = synthetic_numeric.corr(method='spearman')
+        spearman_diff = np.abs(spearman_corr - synthetic_spearman_corr)
+        spearman_mean_diff = np.mean(spearman_diff)
+        self.results.at[self.synthetic_name, "CorrelationSpearman"] = spearman_mean_diff
 
-    def _pca(self, full_train, synthetic) -> Path:
-        combined = pd.concat([full_train, synthetic], ignore_index=True)
-        X = combined.select_dtypes(include=[np.number]).fillna(0)
-        pca = PCA(n_components=2).fit_transform(X)
-        n = len(full_train)
-        plt.figure(figsize=(9, 7))
-        plt.scatter(pca[:n, 0], pca[:n, 1], label="Original", alpha=0.5)
-        plt.scatter(pca[n:, 0], pca[n:, 1], label="Synthetic", alpha=0.5)
-        plt.title("PCA: Original vs Synthetic")
-        plt.xlabel("PC1")
-        plt.ylabel("PC2")
+        # Save original, synthetic and heatmap of differences
+        spearman_corr.to_csv(output_dir / 'original_spearman_corr.csv')
+        synthetic_spearman_corr.to_csv(output_dir / 'synthetic_spearman_corr.csv')
+        spearman_diff.to_csv(output_dir / 'spearman_correlation_difference.csv')
+        diff_plot_path = output_dir / 'spearman_correlation_difference_heatmap.png'
+        plt.figure(figsize=(12, 10))
+        sns.heatmap(spearman_diff, annot=True, fmt=".2f", cmap='viridis')
+        plt.title('Spearman Correlation Difference Heatmap')
+        plt.savefig(diff_plot_path)
+        plt.clf()
+
+    def calculate_pca(self, original: pd.DataFrame, synthetic: pd.DataFrame):
+        output_dir = self.results_dir / 'PCA'
+        output_dir.mkdir(parents=True, exist_ok=True)
+        combined = pd.concat([original, synthetic], ignore_index=True)
+        combined = pd.get_dummies(combined, columns=self.categorical_columns)
+        pca = PCA(n_components=2)
+        pca_result = pca.fit_transform(combined)
+        n = len(original)
+
+        plt.figure(figsize=(12, 8))
+        plt.scatter(pca_result[:n, 0], pca_result[:n, 1], label='Original', alpha=0.5)
+        plt.scatter(pca_result[n:, 0], pca_result[n:, 1], label='Synthetic', alpha=0.5)
+        plt.title('PCA of Original and Synthetic Data')
+        plt.xlabel('PC1')
+        plt.ylabel('PC2')
         plt.legend()
-        out = self.similarity_dir / "PCA_Original_vs_Synthetic.png"
-        plt.savefig(out)
+        pca_plot_path = output_dir / 'pca_plot.png'
+        plt.savefig(pca_plot_path)
         plt.clf()
-        return out
 
-    def _pca_3d(self, full_train: pd.DataFrame, synthetic: pd.DataFrame) -> Path:
-        """
-        Build an interactive 3D PCA scatter with Plotly and save as HTML.
-        Returns the HTML path.
-        """
-        from sklearn.decomposition import PCA
-        import plotly.graph_objs as go
-        from plotly.offline import plot as plotly_plot
-
-        combined = pd.concat([full_train, synthetic], ignore_index=True)
-        X = combined.select_dtypes(include=[np.number]).fillna(0)
-
-        pca = PCA(n_components=3)
-        coords = pca.fit_transform(X)
-
-        n = len(full_train)
-        x_o, y_o, z_o = coords[:n, 0], coords[:n, 1], coords[:n, 2]
-        x_s, y_s, z_s = coords[n:, 0], coords[n:, 1], coords[n:, 2]
-
-        evr = pca.explained_variance_ratio_
-        title = (f"PCA 3D: Original vs Synthetic "
-                 f"(Explained Var %: PC1 {evr[0]:.1%}, PC2 {evr[1]:.1%}, PC3 {evr[2]:.1%})")
-
-        fig = go.Figure()
-
-        fig.add_trace(go.Scatter3d(
-            x=x_o, y=y_o, z=z_o,
-            mode="markers",
-            name="Original",
-            opacity=0.6,
-            marker=dict(size=3)
-        ))
-        fig.add_trace(go.Scatter3d(
-            x=x_s, y=y_s, z=z_s,
-            mode="markers",
-            name="Synthetic",
-            opacity=0.6,
-            marker=dict(size=3)
-        ))
-
-        fig.update_layout(
-            title=title,
-            scene=dict(
-                xaxis_title="PC1",
-                yaxis_title="PC2",
-                zaxis_title="PC3",
-            ),
-            legend=dict(x=0.01, y=0.99)
-        )
-
-        out = self.similarity_dir / "PCA3D_Original_vs_Synthetic.html"
-        plotly_plot(fig, filename=str(out), auto_open=False, include_plotlyjs='cdn')
-        return out
-
-    def _save_txt(self, metric_name: str, result,  base_dir: Path = None) -> None:
-        base = base_dir if base_dir is not None else self.output_dir
-        base.mkdir(parents=True, exist_ok=True)
-        p = base / f"{metric_name}_result.txt"
-        with open(p, "w", encoding="utf-8") as f:
-            if isinstance(result, dict):
-                for k, v in result.items(): f.write(f"{k}: {v}\n")
-            else:
-                f.write(f"value: {result}\n")
-
-def _csv_list(s: str) -> list[str]:
-    return [x.strip() for x in s.split(",")] if s else []
-
-def cli(argv: list[str] = None) -> int:
-    parser = argparse.ArgumentParser(
-        description="Evaluate synthetic data privacy & utility metrics."
-    )
-
-    parser.add_argument(
-        "--data-dir", type=str, required=True,
-        help="Directory containing original data CSV (train.csv)."
-    )
-    parser.add_argument(
-        "--categorical-cols", type=_csv_list, default=[],
-        help="Comma-separated list of categorical column names."
-    )
-    parser.add_argument(
-        "--model-path", type=str, required=True,
-        help="Path to the trained generative model file (pickle)."
-    )
-    parser.add_argument(
-        "--output-dir", type=str, required=True,
-        help="Directory to save evaluation results."
-    )
-    parser.add_argument(
-        "--metrics", type=_csv_list, default=None,
-        help="Comma-separated list of metrics to compute. "
-    )
-    parser.add_argument(
-        "--keys", type=_csv_list, default=None,
-        help="Comma-separated list of key columns for Disclosure metric."
-    )
-    parser.add_argument(
-        "--target", type=str, default=None,
-        help="Target column for Disclosure metric."
-    )
-    parser.add_argument(
-        "--inf-aux-cols", type=_csv_list, default=None,
-        help="Comma-separated list of auxiliary columns for Inference metric."
-    )
-    parser.add_argument(
-        "--secret", type=str, default=None,
-        help="Secret column for Inference metric."
-    )
-    parser.add_argument(
-        "--regression", action="store_true",
-        help="Flag indicating if the secret is continuous (regression). Default is classification."
-    )
-    parser.add_argument(
-        "--link-aux-cols", type=str, default=None,
-        help="Comma-separated pair of auxiliary column lists for Linkability metric, e.g., 'col1,col2;col3,col4'."
-    )
-    parser.add_argument(
-        "--control-frac", type=float, default=0.3,
-        help="Fraction of original data to use as control for Linkability metric. Default is 0.3."
-    )
-    parser.add_argument(
-        "--original-name", type=str, default="adult",
-        help="Name of the original dataset (for labeling). Default is 'adult'."
-    )
-    parser.add_argument(
-        "--synthetic-name", type=str, default="CTGAN",
-        help="Name of the synthetic dataset/model (for labeling). Default is 'CTGAN'."
-    )
-    parser.add_argument(
-        "--model-type", type=str, default="ctgan",
-        help="Type of generative model (ctgan, tabddpm, etc.). Default is 'ctgan'."
-    )
-    parser.add_argument(
-        "--run-dir", type=str, default=None,
-        help="Path to the run directory containing agent subdirectories (for Consensus metric)."
-    )
-    parser.add_argument(
-        "--eval-iters", action="store_true",
-        help="If set, evaluate metrics at model iteration checkpoints under run-dir/agent_00."
-    )
-    parser.add_argument(
-        "--iter-gap", type=int, default=50,
-        help="Interval between iterations to evaluate if --eval-iters is set. Default is 50."
-    )
-    parser.add_argument(
-        "--seed", type=int, default=42,
-        help="Random seed for reproducibility. Default is 42."
-    )
-    parser.add_argument(
-        "--baseline", action="store_true",
-        help="If set, run baseline evaluation (no synthetic data) for Consensus metric."
-    )
-
-    args = parser.parse_args(argv)
-
-    orig_metrics = args.metrics
-    selected = set([m.lower() for m in args.metrics]) if args.metrics else set()
-
-    def want(name: str) -> bool:
-        return name.lower() in selected
-
-    link_aux_cols = None
-    if want("linkability"):
-        if not args.link_a or not args.link_b:
-            print("ERROR: --link-a and --link-b are required when running Linkability.", file=sys.stderr)
-            return 2
-        link_aux_cols = (args.link_a, args.link_b)
-
-    # Disclosure requirements
-    if want("disclosure"):
-        if not args.keys or not args.target:
-            print("ERROR: --keys and --target are required when running Disclosure.", file=sys.stderr)
-            return 2
-
-    # Inference requirements
-    if want("inference"):
-        if not args.inf_aux_cols or not args.secret:
-            print("ERROR: --inf-aux-cols and --secret are required when running Inference.", file=sys.stderr)
-            return 2
-
-    # Consensus requirements
-    if want("consensus"):
-        if not args.run_dir:
-            print("ERROR: --run-dir is required when running Consensus.", file=sys.stderr)
-            return 2
-
-    if args.eval_iters:
-        if not args.run_dir:
-            print("ERROR: --run-dir is required for --iter-eval (to locate agent_00/iter-*-model.pkl).",
-                  file=sys.stderr)
-            return 2
-
-        print(f"[iter-eval] Running iteration sweep every {args.iter_interval} iters...")
-
-        # Remove consensus from metrics if present
-        if "consensus" in selected:
-            selected.remove("consensus")
-            orig_metrics = [m for m in orig_metrics if m.lower() != "consensus"]
-            print("  Note: Consensus metric is skipped during iteration evaluation.")
-
-        evaluator = Evaluator(
-            data_dir=args.data_dir,
-            categorical_cols=args.categorical_cols,
-            model_path=args.model_path,
-            output_dir=args.output_dir,
-            original_name=args.original_name,
-            synthetic_name=args.synthetic_name,
-            model_type=args.model_type,
-            metrics=orig_metrics,
-            keys=args.keys,
-            target=args.target,
-            inf_aux_cols=args.inf_aux_cols,
-            secret=args.secret,
-            regression=args.regression,
-            link_aux_cols=link_aux_cols,
-            control_frac=args.control_frac,
-            run_dir=None,  # No consensus during iter eval
-        )
-        evaluator.seed = args.seed
-
-        all_privacy, all_utility = evaluator.evaluate_iterations(gap=args.iter_gap)
-        p_priv = Path(args.output_dir) / "all_privacy_iterations.csv"
-        p_util = Path(args.output_dir) / "all_utility_iterations.csv"
-        df_priv = pd.DataFrame.from_dict(all_privacy, orient="index").sort_index
-        df_util = pd.DataFrame.from_dict(all_utility, orient="index").sort_index
-        df_priv.to_csv(p_priv)
-        df_util.to_csv(p_util)
-        return 0
-
-    if args.baseline:
-        print("Running baseline evaluation (no synthetic data)...")
-        if not args.run_dir:
-            print("ERROR: --run-dir is required when running baseline (for Consensus metric).", file=sys.stderr)
-            return 2
-
-        evaluator = Evaluator(
-            data_dir=args.data_dir,
-            run_dir=args.run_dir,
-            categorical_cols=args.categorical_cols,
-            model_path=args.model_path,
-            output_dir=args.output_dir,
-            original_name=args.original_name,
-            synthetic_name=args.synthetic_name,
-            model_type=args.model_type,
-            metrics=orig_metrics,
-            keys=args.keys,
-            target=args.target,
-            inf_aux_cols=args.inf_aux_cols,
-            secret=args.secret,
-            regression=args.regression,
-            link_aux_cols=link_aux_cols,
-            control_frac=args.control_frac,
-        )
-        evaluator.seed = args.seed
-        evaluator.evaluate()
-        return 0
-
-    # loop over agents
-    run_dir = Path(args.run_dir)
-    agent_dirs = sorted([p for p in run_dir.glob("agent_*") if p.is_dir()])
-
-    if not agent_dirs:
-        print("ERROR: No agents found in run-dir", file=sys.stderr)
-        return 2
-
-    for agent_dir in agent_dirs:
-        model_path = agent_dir / args.model_path
-        if not model_path.exists():
-            print(f"ERROR: Model {model_path} not found in agent dir {agent_dir}.", file=sys.stderr)
-            return 2
-
-        print(f"Evaluating agent dir: {agent_dir} with model: {model_path}")
-        out_dir = agent_dir / "results"
-        out_dir.mkdir(parents=True, exist_ok=True)
-
-        evaluator = Evaluator(
-            data_dir=args.data_dir,
-            categorical_cols=args.categorical_cols,
-            model_path=str(model_path),
-            output_dir=str(out_dir),
-            original_name=args.original_name,
-            synthetic_name=f"{args.synthetic_name}_{agent_dir.name}",
-            model_type=args.model_type,
-            metrics=orig_metrics,
-            keys=args.keys,
-            target=args.target,
-            inf_aux_cols=args.inf_aux_cols,
-            secret=args.secret,
-            regression=args.regression,
-            link_aux_cols=link_aux_cols,
-            control_frac=args.control_frac,
-            run_dir=args.run_dir
-        )
-        evaluator.seed = args.seed
-
-        results = evaluator.evaluate()
-        print("\n========= SUMMARY =========\n")
-        print(results)
-    return 0
 
 if __name__ == "__main__":
-    sys.exit(cli())
+    loader = DatasetLoader(ADULT_PATH, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET)
+    original_data = loader.get_train()
+    model_type = "ctgan"
+    model_name = "iter-00300-model.pkl"
+    run_dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/runs/ctgan/4A-1E-500R-Full/run-20251024-150720-4Agents-1Epochs-300Iterations-full-ctgan/agent_00"
+    metrics = ['PCA', 'Consensus', 'Correlation']
+    evaluator = Evaluator(
+        original_data=original_data,
+        original_data_path=ADULT_PATH,
+        categorical_columns=ADULT_CATEGORICAL_COLUMNS + [ADULT_TARGET],
+        run_dir=run_dir,
+        metrics=metrics,
+        model_type=model_type,
+        model_name=model_name,
+        dataset_name="adult",
+        synthetic_name="CTGAN",
+    )
+    results = evaluator.evaluate()

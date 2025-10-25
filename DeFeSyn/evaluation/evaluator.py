@@ -35,7 +35,7 @@ class Evaluator:
             original_data: pd.DataFrame,
             original_data_path: str,
             categorical_columns: list[str],
-            run_dir: str,
+            agent_dir: str,
             metrics: list[str],
             model_type: str = "ctgan",
             model_name: str = "ctgan.pkl",
@@ -43,7 +43,8 @@ class Evaluator:
             synthetic_name: str = "CTGAN",
             keys: list[str] = None,
             target: str = None,
-            seed: int = 42
+            seed: int = 42,
+            iteration: int = None
     ):
         self.original_data: pd.DataFrame = original_data
         self.data_dir: Path = Path(original_data_path)
@@ -60,7 +61,7 @@ class Evaluator:
         self.target: str = target
         self.seed: int = seed
 
-        self.run_dir: Path = Path(run_dir)
+        self.run_dir: Path = Path(agent_dir)
         self.model_path: Path = self.run_dir / self.model_name
         self.results: pd.DataFrame = pd.DataFrame(columns=[
             "DCR", "NNDR", "AdversarialAccuracy",
@@ -73,7 +74,10 @@ class Evaluator:
             "RepU", "DiSCO"]
         self.similarity_metrics = ["Mean", "Median", "Variance", "JS", "KS", "WASSERSTEIN",
             "CorrelationPearson", "CorrelationSpearman", "PCA"]
-        self.results_dir: Path = self.run_dir / "results"
+        if iteration is not None:
+            self.results_dir = self.run_dir / f"results-iter-{iteration:05d}"
+        else:
+            self.results_dir: Path = self.run_dir / "results"
         self.results_file: Path = self.results_dir / "results.csv"
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
@@ -93,13 +97,13 @@ class Evaluator:
 
         if not self.metrics == ['Consensus']:
             synthetic: pd.DataFrame = self.get_synthetic()
-            self.calculate_privacy_metrics(original_data, synthetic)
-            self.calculate_similarity_metrics(original_data, synthetic)
+            self.calculate_privacy_metrics(self.original_data, synthetic)
+            self.calculate_similarity_metrics(self.original_data, synthetic)
 
         if 'Consensus' in self.metrics:
             consensus(self.run_dir.parent)
 
-        self.results.to_csv(self.results_file, index=False)
+        self.results.to_csv(self.results_file, index=True)
         return self.results
 
     def get_calculated_metrics(self):
@@ -107,7 +111,9 @@ class Evaluator:
         if self.results_file.exists():
             saved_results = pd.read_csv(self.results_file, index_col=0)
             for metric in self.metrics:
-                if metric in saved_results.columns:
+                # Only save if not nan
+                if metric in saved_results.columns and pd.notna(saved_results.at[self.synthetic_name, metric]):
+                    print("Loading saved metric:", metric)
                     self.results.at[self.synthetic_name, metric] = saved_results.at[self.synthetic_name, metric]
 
     def get_synthetic(self) -> pd.DataFrame:
@@ -149,15 +155,15 @@ class Evaluator:
         y = np.load(y_p, allow_pickle=True)
 
         x_gen = np.concatenate([x_num, x_cat], axis=1)
-        synthetic = pd.DataFrame(x_gen, columns=original_data.columns.drop(self.target))
+        synthetic = pd.DataFrame(x_gen, columns=self.original_data.columns.drop(self.target))
         synthetic[self.target] = np.asarray(y).squeeze()
 
         # Ensure categorical columns have the same dtype as original
         for col in self.categorical_columns:
-            synthetic[col] = synthetic[col].astype(original_data[col].dtype)
+            synthetic[col] = synthetic[col].astype(self.original_data[col].dtype)
 
         # Ensure numerical are float
-        for col in original_data.columns:
+        for col in self.original_data.columns:
             if col not in self.categorical_columns and col != self.target:
                 synthetic[col] = synthetic[col].astype('float64')
 
@@ -194,7 +200,7 @@ class Evaluator:
                                                             keys=self.keys, target=self.target)
                     repu_value, disco_value = disco_calculator.evaluate()
                     self.results.at[self.synthetic_name, "RepU"] = repu_value
-                    self.results.at[self.synthetic_name, "DiSCO"] = disco_value
+                    self.results.at[self.synthetic_name, "Disclosure"] = disco_value
 
         print("Calculated Privacy Metrics:")
         for metric in self.privacy_metrics:
@@ -312,15 +318,8 @@ if __name__ == "__main__":
     model_name = "iter-00300-model.pkl"
     run_dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/runs/ctgan/4A-1E-500R-Full/run-20251024-150720-4Agents-1Epochs-300Iterations-full-ctgan/agent_00"
     metrics = ['PCA', 'Consensus', 'Correlation']
-    evaluator = Evaluator(
-        original_data=original_data,
-        original_data_path=ADULT_PATH,
-        categorical_columns=ADULT_CATEGORICAL_COLUMNS + [ADULT_TARGET],
-        run_dir=run_dir,
-        metrics=metrics,
-        model_type=model_type,
-        model_name=model_name,
-        dataset_name="adult",
-        synthetic_name="CTGAN",
-    )
+    evaluator = Evaluator(original_data=original_data, original_data_path=ADULT_PATH,
+                          categorical_columns=ADULT_CATEGORICAL_COLUMNS + [ADULT_TARGET], agent_dir=run_dir,
+                          metrics=metrics, model_type=model_type, model_name=model_name, dataset_name="adult",
+                          synthetic_name="CTGAN")
     results = evaluator.evaluate()

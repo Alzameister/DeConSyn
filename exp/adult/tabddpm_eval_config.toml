@@ -1,0 +1,20 @@
+original_data_path = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/data/adult"
+categorical_columns = [
+    "workclass",
+    "education",
+    "marital-status",
+    "occupation",
+    "relationship",
+    "race",
+    "sex",
+    "native-country",
+    'income'
+]
+dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/runs/tabddpm/4A-30E-1000R-Full/run-20251016-064516-4Agents-30Epochs-1000Iterations-full-tabddpm"
+metrics = ["DCR", "NNDR", "AdversarialAccuracy", "Disclosure", "JS", "KS", "BasicStats", 'PCA', 'Consensus', 'Correlation']
+model_type = "tabddpm"
+dataset_name = "adult"
+keys = ["age", "education", "marital-status", "occupation"]
+target = 'income'
+seed = 42
+iterations = 1000

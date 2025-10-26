@@ -132,6 +132,9 @@ class DatasetLoader:
             agent_df = df.loc[agent_rows].sample(frac=1.0, random_state=seed)
             splits.append(agent_df.reset_index(drop=True))
 
+        all_idxs = [i for agent_rows in allocations for i in agent_rows]
+        assert len(all_idxs) == len(set(all_idxs)), "Duplicate row detected across splits."
+        assert set(all_idxs) == set(df.index), "Some rows are missing or extra."
         return splits
 
     def split_test_iid(self, nr_agents: int, seed: int = 42):

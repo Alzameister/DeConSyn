@@ -11,6 +11,7 @@ from DeConSyn.evaluation.consensus import consensus
 from DeConSyn.io.io import get_config_dir, load_model_pickle
 from DeConSyn.models.tab_ddpm.lib import load_config
 from DeConSyn.models.tab_ddpm.scripts.sample import sample
+from DeFeSyn.utils.seed import set_global_seed
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.distance.adversarial_accuracy_class import \
     AdversarialAccuracyCalculator
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.distance.dcr_class import \
@@ -130,6 +131,7 @@ class Evaluator:
         int_cols = self.original_data.select_dtypes(include=['int64']).columns
         self.original_data[int_cols] = self.original_data[int_cols].astype('float64')
         config = load_config(get_config_dir() / self.dataset_name / "config.toml")
+        set_global_seed(self.seed)
 
         sample(
             parent_dir=self.run_dir,
@@ -144,7 +146,7 @@ class Evaluator:
             T_dict=config['train']['T'],
             num_numerical_features=config['num_numerical_features'],
             device="cpu",
-            seed=0,
+            seed=self.seed,
             change_val=False
         )
 
@@ -173,7 +175,8 @@ class Evaluator:
 
     def load_ctgan(self) -> pd.DataFrame:
         model = load_model_pickle(Path(self.model_path))
-        return model.sample(10_000, self.seed)
+        set_global_seed(self.seed)
+        return model.sample(10_000)
 
     def calculate_privacy_metrics(self, original: pd.DataFrame, synthetic: pd.DataFrame):
         print("Calculating privacy metrics...")

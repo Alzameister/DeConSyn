@@ -46,6 +46,8 @@ class Evaluator:
             target: str = None,
             seed: int = 42,
             iteration: int = None,
+            baseline: bool = False,
+            baseline_dir: str = None
     ):
         self.original_data: pd.DataFrame = original_data
         self.data_dir: Path = Path(original_data_path)
@@ -53,6 +55,8 @@ class Evaluator:
 
         self.model_type: str = model_type
         self.model_name: str = model_name
+        self.baseline = baseline
+        self.baseline_dir = baseline_dir
 
         self.dataset_name: str = dataset_name
         self.synthetic_name: str = synthetic_name
@@ -100,11 +104,16 @@ class Evaluator:
 
         if not self.metrics == ['Consensus']:
             synthetic: pd.DataFrame = self.get_synthetic()
+            self.plot_distributions(self.original_data, synthetic)
             self.calculate_privacy_metrics(self.original_data, synthetic)
             self.calculate_similarity_metrics(self.original_data, synthetic)
 
         if 'Consensus' in self.metrics:
             consensus(self.run_dir.parent)
+
+        if self.baseline:
+            synthetic.to_csv(self.results_dir / f"{self.synthetic_name}_synthetic.csv", index=False)
+
 
         self.results.to_csv(self.results_file, index=True)
         return self.results
@@ -137,8 +146,8 @@ class Evaluator:
             parent_dir=self.run_dir,
             model_path=self.model_path,
             real_data_path=str(self.data_dir) + "/npy",
-            num_samples=10000,  # len(original_data),
-            batch_size=10000,  # config['sample']['batch_size'],
+            num_samples=10000,
+            batch_size=10000,
             disbalance=config['sample'].get('disbalance', None),
             **config['diffusion_params'],
             model_type=config['model_type'],
@@ -313,6 +322,98 @@ class Evaluator:
         plt.legend()
         pca_plot_path = output_dir / 'pca_plot.png'
         plt.savefig(pca_plot_path)
+        plt.clf()
+
+    def plot_distributions(self, original: pd.DataFrame, synthetic: pd.DataFrame):
+        if not self.baseline and self.baseline_dir is not None:
+            baseline_synthetic_path = Path(self.baseline_dir) / "results" / f"{self.dataset_name}_synthetic.csv"
+            if baseline_synthetic_path.exists():
+                baseline_synthetic = pd.read_csv(baseline_synthetic_path)
+                self._plot_distributions_with_baseline(original, synthetic, baseline_synthetic)
+
+        output_dir = self.results_dir / 'Distributions'
+        output_dir.mkdir(parents=True, exist_ok=True)
+        columns = original.columns
+        n_cols = 3
+        n_rows = int(np.ceil(len(columns) / n_cols))
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows))
+        axes = axes.flatten()
+
+        for idx, column in enumerate(columns):
+            ax = axes[idx]
+            if column in self.categorical_columns:
+                orig_freq = original[column].value_counts(normalize=True).sort_index()
+                synth_freq = synthetic[column].value_counts(normalize=True).sort_index()
+                all_cats = sorted(set(orig_freq.index).union(synth_freq.index))
+                orig_freq = orig_freq.reindex(all_cats, fill_value=0)
+                synth_freq = synth_freq.reindex(all_cats, fill_value=0)
+                width = 0.4
+                x = np.arange(len(all_cats))
+                ax.bar(x - width / 2, orig_freq, width=width, color='blue', alpha=0.7, label='Original')
+                ax.bar(x + width / 2, synth_freq, width=width, color='orange', alpha=0.7, label='Synthetic')
+                ax.set_xticks(x)
+                ax.set_xticklabels(all_cats, rotation=45, ha='right')
+                ax.set_ylabel('Proportion')
+            else:
+                sns.histplot(original[column], color='blue', label='Original', stat='probability', ax=ax, alpha=0.3)
+                sns.histplot(synthetic[column], color='orange', label='Synthetic', stat='probability', ax=ax, alpha=0.3)
+                # sns.kdeplot(original[column], color='blue', ax=ax)
+                # sns.kdeplot(synthetic[column], color='orange', ax=ax)
+                ax.set_ylabel('Density')
+            ax.set_title(f'Distribution of {column}')
+            ax.set_xlabel(column)
+            ax.legend()
+
+        for j in range(idx + 1, len(axes)):
+            fig.delaxes(axes[j])
+
+        plt.tight_layout()
+        plot_path = output_dir / 'all_distributions.png'
+        plt.savefig(plot_path)
+        plt.clf()
+
+    def _plot_distributions_with_baseline(self, original: pd.DataFrame, synthetic: pd.DataFrame, baseline_synthetic: pd.DataFrame):
+        output_dir = self.results_dir / 'Distributions'
+        output_dir.mkdir(parents=True, exist_ok=True)
+        columns = original.columns
+        n_cols = 3
+        n_rows = int(np.ceil(len(columns) / n_cols))
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows))
+        axes = axes.flatten()
+
+        for idx, column in enumerate(columns):
+            ax = axes[idx]
+            if column in self.categorical_columns:
+                synth_freq = synthetic[column].value_counts(normalize=True).sort_index()
+                baseline_freq = baseline_synthetic[column].value_counts(normalize=True).sort_index()
+                all_cats = sorted(set(synth_freq.index).union(baseline_freq.index))
+                synth_freq = synth_freq.reindex(all_cats, fill_value=0)
+                baseline_freq = baseline_freq.reindex(all_cats, fill_value=0)
+                x = np.arange(len(all_cats))
+                ax.bar(x + 0.2, baseline_freq, width=0.2, color='blue', alpha=0.5, label='Baseline')
+                ax.bar(x, synth_freq, width=0.2, color='orange', alpha=0.5, label='Synthetic')
+                ax.set_xticks(x)
+                ax.set_xticklabels(all_cats, rotation=45, ha='right')
+                ax.set_ylabel('Proportion')
+            else:
+                sns.histplot(baseline_synthetic[column], color='blue', label='Baseline', stat='probability',
+                             ax=ax, alpha=0.3)
+                sns.histplot(synthetic[column], color='orange', label='Synthetic', stat='probability', ax=ax, alpha=0.3)
+
+                #sns.kdeplot(original[column], color='blue', ax=ax)
+                #sns.kdeplot(synthetic[column], color='orange', ax=ax)
+                #sns.kdeplot(baseline_synthetic[column], color='green', ax=ax)
+                ax.set_ylabel('Density')
+            ax.set_title(f'Distribution of {column}')
+            ax.set_xlabel(column)
+            ax.legend()
+
+        for j in range(idx + 1, len(axes)):
+            fig.delaxes(axes[j])
+
+        plt.tight_layout()
+        plot_path = output_dir / 'all_distributions_with_baseline.png'
+        plt.savefig(plot_path)
         plt.clf()
 
 

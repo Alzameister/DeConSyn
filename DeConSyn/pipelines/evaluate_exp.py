@@ -26,6 +26,7 @@ def eval_agents(config):
         sys.exit(2)
 
     original_data_path = config['original_data_path']
+    baseline_dir = config['baseline_dir']
     categorical_columns = config['categorical_columns']
     target = config['target']
     loader = DatasetLoader(original_data_path, categorical_columns, target)
@@ -63,7 +64,9 @@ def eval_agents(config):
                                   keys=config['keys'],
                                   target=target,
                                   seed=config['seed'],
-                                  iteration=i)
+                                  iteration=i,
+                                  baseline_dir=baseline_dir
+                                  )
             results = evaluator.evaluate()
             print(f"\n========= SUMMARY for {agent_dir.name} ({model_name}) =========\n")
             print(results)
@@ -75,8 +78,7 @@ def eval_baseline(config):
     target = config['target']
     loader = DatasetLoader(original_data_path, categorical_columns, target)
     original_data = loader.get_train()
-    dir = config["dir"]
-    baseline_dir = dir + '/ctgan_baseline'
+    baseline_dir = config['baseline_dir']
 
     evaluator = Evaluator(
         original_data=original_data,
@@ -90,7 +92,8 @@ def eval_baseline(config):
         synthetic_name=config['dataset_name'],
         keys=config['keys'],
         target=target,
-        seed=config['seed']
+        seed=config['seed'],
+        baseline=True
     )
     results = evaluator.evaluate()
     print(f"\n========= SUMMARY for Baseline ({config['baseline_model_name']}) =========\n")

@@ -69,14 +69,46 @@ def eval_agents(config):
             print(results)
             i += config["iterations"]
 
+def eval_baseline(config):
+    original_data_path = config['original_data_path']
+    categorical_columns = config['categorical_columns']
+    target = config['target']
+    loader = DatasetLoader(original_data_path, categorical_columns, target)
+    original_data = loader.get_train()
+    dir = config["dir"]
+    baseline_dir = dir + '/ctgan_baseline'
+
+    evaluator = Evaluator(
+        original_data=original_data,
+        original_data_path=original_data_path,
+        categorical_columns=categorical_columns,
+        agent_dir=baseline_dir,
+        metrics=config['metrics'],
+        model_type=config['model_type'],
+        model_name=config['baseline_model_name'],
+        dataset_name=config['dataset_name'],
+        synthetic_name=config['dataset_name'],
+        keys=config['keys'],
+        target=target,
+        seed=config['seed']
+    )
+    results = evaluator.evaluate()
+    print(f"\n========= SUMMARY for Baseline ({config['baseline_model_name']}) =========\n")
+    print(results)
+
+
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate experiments in a given directory.")
     parser.add_argument("--config", type=str, required=True, help="Path to the evaluation configuration file.")
+    parser.add_argument("--baseline", action="store_true", help="Evaluate baseline.")
     args = parser.parse_args()
 
     config = load_config(args.config)
-    eval_agents(config)
+    if args.baseline:
+        eval_baseline(config)
+    else:
+        eval_agents(config)
 
 if __name__ == "__main__":
     main()

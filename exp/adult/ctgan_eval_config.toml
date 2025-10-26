@@ -13,6 +13,7 @@ categorical_columns = [
 dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/runs/ctgan/"
 metrics = ["DCR", "NNDR", "AdversarialAccuracy", "Disclosure", "JS", "KS", "BasicStats", 'PCA', 'Consensus', 'Correlation']
 model_type = "ctgan"
+baseline_model_name = "ctgan_adult_baseline.pkl"
 dataset_name = "adult"
 keys = ["age", "education", "marital-status", "occupation"]
 target = 'income'

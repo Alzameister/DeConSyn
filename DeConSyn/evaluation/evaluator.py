@@ -44,7 +44,7 @@ class Evaluator:
             keys: list[str] = None,
             target: str = None,
             seed: int = 42,
-            iteration: int = None
+            iteration: int = None,
     ):
         self.original_data: pd.DataFrame = original_data
         self.data_dir: Path = Path(original_data_path)
@@ -82,6 +82,8 @@ class Evaluator:
         self.results_dir.mkdir(parents=True, exist_ok=True)
 
         self.validate_requirements()
+
+        print("Using model path:", self.model_path)
 
     def validate_requirements(self):
         # Validate that required parameters are set for specific metrics

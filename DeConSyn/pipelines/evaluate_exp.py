@@ -79,6 +79,11 @@ def eval_baseline(config):
     loader = DatasetLoader(original_data_path, categorical_columns, target)
     original_data = loader.get_train()
     baseline_dir = config['baseline_dir']
+    metrics = config['metrics']
+    if 'Consensus' in metrics:
+        # Remove consensus from metrics
+        metrics.remove('Consensus')
+
 
     evaluator = Evaluator(
         original_data=original_data,

@@ -71,13 +71,13 @@ class Evaluator:
         self.results: pd.DataFrame = pd.DataFrame(columns=[
             "DCR", "NNDR", "AdversarialAccuracy",
             "RepU", "Disclosure",
-            "Mean", "Median", "Variance", "JS", "KS", "WASSERSTEIN",
+            "Mean", "Median", "Var", "JS", "KS", "WASSERSTEIN",
             "CorrelationPearson", "CorrelationSpearman", "PCA",
             "Consensus"
         ], index=[self.synthetic_name])
         self.privacy_metrics = ["DCR", "NNDR", "AdversarialAccuracy", "Disclosure",
             "RepU", "DiSCO"]
-        self.similarity_metrics = ["Mean", "Median", "Variance", "JS", "KS", "WASSERSTEIN",
+        self.similarity_metrics = ["Mean", "Median", "Var", "JS", "KS", "WASSERSTEIN",
             "CorrelationPearson", "CorrelationSpearman", "PCA"]
         if iteration is not None:
             self.results_dir = self.run_dir / f"results-iter-{iteration:05d}"
@@ -99,7 +99,7 @@ class Evaluator:
         self.get_calculated_metrics()
 
         # If all metrics already covered, return results
-        if all(metric in self.results.columns and pd.notna(self.results.at[self.synthetic_name, metric]) for metric in self.metrics):
+        if self.all_metrics_covered():
             return self.results
 
         if not self.metrics == ['Consensus']:
@@ -118,15 +118,41 @@ class Evaluator:
         self.results.to_csv(self.results_file, index=True)
         return self.results
 
+    def get_result_columns_for_metric(self, metric: str) -> list[str]:
+        """Map a metric name to the result columns it produces."""
+        metric_to_columns = {
+            "Correlation": ["CorrelationPearson", "CorrelationSpearman"],
+            "BasicStats": ["Mean", "Median", "Var"],
+            "DCR": ["DCR"],
+            "NNDR": ["NNDR"],
+            "AdversarialAccuracy": ["AdversarialAccuracy"],
+            "RepU": ["RepU"],
+            "Disclosure": ["Disclosure"],
+            "JS": ["JS"],
+            "KS": ["KS"],
+            "WASSERSTEIN": ["WASSERSTEIN"],
+        }
+        return metric_to_columns.get(metric, [metric])
+
+    def all_metrics_covered(self) -> bool:
+        """Check if all required result columns for the selected metrics are present and not NaN."""
+        for metric in self.metrics:
+            if metric in ['Consensus', 'PCA']:
+                continue
+            for col in self.get_result_columns_for_metric(metric):
+                if col not in self.results.columns or pd.isna(self.results.at[self.synthetic_name, col]):
+                    return False
+        return True
+
     def get_calculated_metrics(self):
         """Checks if metrics have been calculated and saved in a file --> Append to results."""
         if self.results_file.exists():
             saved_results = pd.read_csv(self.results_file, index_col=0)
             for metric in self.metrics:
-                # Only save if not nan
-                if metric in saved_results.columns and pd.notna(saved_results.at[self.synthetic_name, metric]):
-                    print("Loading saved metric:", metric)
-                    self.results.at[self.synthetic_name, metric] = saved_results.at[self.synthetic_name, metric]
+                for col in self.get_result_columns_for_metric(metric):
+                    if col in saved_results.columns and pd.notna(saved_results.at[self.synthetic_name, col]):
+                        print(f"Loading saved metric column: {col}")
+                        self.results.at[self.synthetic_name, col] = saved_results.at[self.synthetic_name, col]
 
     def get_synthetic(self) -> pd.DataFrame:
         if self.model_type == "ctgan":
@@ -146,7 +172,7 @@ class Evaluator:
             parent_dir=self.run_dir,
             model_path=self.model_path,
             real_data_path=str(self.data_dir) + "/npy",
-            num_samples=10000,
+            num_samples=len(self.original_data),
             batch_size=10000,
             disbalance=config['sample'].get('disbalance', None),
             **config['diffusion_params'],
@@ -185,7 +211,8 @@ class Evaluator:
     def load_ctgan(self) -> pd.DataFrame:
         model = load_model_pickle(Path(self.model_path))
         set_global_seed(self.seed)
-        return model.sample(10_000)
+        return model.sample(len(self.original_data))
+        # return model.sample(10_000)
 
     def calculate_privacy_metrics(self, original: pd.DataFrame, synthetic: pd.DataFrame):
         print("Calculating privacy metrics...")

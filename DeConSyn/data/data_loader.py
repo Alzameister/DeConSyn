@@ -16,9 +16,19 @@ ADULT_CATEGORICAL_COLUMNS = [
         "sex",
         "native-country"
 ]
-
 ADULT_TARGET = "income"
 ADULT_PATH = "/data/adult"
+
+CARDIO_CATEGORICAL_COLUMNS = [
+    "gender",
+    "cholesterol",
+    "gluc",
+    "smoke",
+    "alco",
+    "active"
+]
+CARDIO_TARGET = "cardio"
+CARDIO_PATH = "/data/cardio"
 
 
 class DatasetLoader:

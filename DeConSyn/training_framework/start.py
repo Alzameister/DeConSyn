@@ -10,7 +10,8 @@ import spade
 from loguru import logger
 from joblib import parallel_config
 
-from DeConSyn.data.data_loader import DatasetLoader, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET
+from DeConSyn.data.data_loader import DatasetLoader, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET, \
+    CARDIO_CATEGORICAL_COLUMNS, CARDIO_TARGET
 from DeConSyn.data.data_transformer import DataTransformer
 from DeConSyn.logging.logger import init_logging
 from DeConSyn.models.tab_ddpm.lib import load_config
@@ -89,14 +90,16 @@ async def run(
         config = load_config(config_path)
 
     # prepare data
-    csv_path = data_root + "/csv"
-    transformer = DataTransformer(data_root, ADULT_TARGET, ADULT_CATEGORICAL_COLUMNS)
-    transformer.save_csv(Path(csv_path))
+    #csv_path = data_root + "/csv"
+    #transformer = DataTransformer(data_root, ADULT_TARGET, ADULT_CATEGORICAL_COLUMNS)
+    #transformer = DataTransformer(data_root, CARDIO_TARGET, CARDIO_CATEGORICAL_COLUMNS)
+    #transformer.save_csv(Path(csv_path))
     npy_path = data_root + "/npy"
 
-    logger.info(f"CSV saved to {csv_path}")
+    #logger.info(f"CSV saved to {csv_path}")
 
-    loader = DatasetLoader(data_root, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET)
+    #loader = DatasetLoader(data_root, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET)
+    loader = DatasetLoader(data_root, CARDIO_CATEGORICAL_COLUMNS, CARDIO_TARGET)
     full_train = loader.get_train()
     full_test = loader.get_test()
     splits = loader.split_iid(nr_agents, seed=seed)
@@ -109,19 +112,19 @@ async def run(
     # Head of partitions
     for i in range(nr_agents):
         part = splits[i]
-        transformer.save_split_npy(
+        DataTransformer.save_split_npy(
             part,
             Path(npy_path) / "splits" / str(nr_agents),
             i,
-            ADULT_CATEGORICAL_COLUMNS,
-            ADULT_TARGET
+            CARDIO_CATEGORICAL_COLUMNS,
+            CARDIO_TARGET
         )
-        transformer.save_test_split_npy(
+        DataTransformer.save_test_split_npy(
             test_splits[i],
             Path(npy_path) / "splits" / str(nr_agents),
             i,
-            ADULT_CATEGORICAL_COLUMNS,
-            ADULT_TARGET
+            CARDIO_CATEGORICAL_COLUMNS,
+            CARDIO_TARGET
         )
         logger.info(f"Agent {i} partition: {part.shape}, head:\n{part.head(3)}")
 
@@ -151,7 +154,7 @@ async def run(
                 run_id=run_id,
                 model_type=model_type,
                 real_data_path=npy_path + f"/splits/{nr_agents}/split_{i}" ,
-                target=ADULT_TARGET,
+                target=CARDIO_TARGET,
                 cat_encoder=loader.get_cat_oe(),
                 num_encoder=loader.get_num_transformer(),
                 y_encoder=loader.get_y_oe(),

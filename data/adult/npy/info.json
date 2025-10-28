@@ -1,0 +1,16 @@
+{
+  "task_type": "binclass",
+  "n_classes": 2,
+  "num_features": 6,
+  "cat_features": [
+    "workclass",
+    "education",
+    "marital-status",
+    "occupation",
+    "relationship",
+    "race",
+    "sex",
+    "native-country"
+  ],
+  "target": "income"
+}

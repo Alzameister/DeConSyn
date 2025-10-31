@@ -19,6 +19,7 @@ metrics = ["DCR", "NNDR", "AdversarialAccuracy", "Disclosure", "JS", "KS", "Basi
 #metrics = ["Distribution"]
 
 model_type = "ctgan"
+baseline_model_name = "ctgan_adult_baseline.pkl"
 dataset_name = "adult"
 keys = ["age", "education", "marital-status", "occupation"]
 target = 'income'

@@ -58,7 +58,6 @@ class PullState(BaseState):
                 continue
 
             try:
-                print("Reply body:", reply.body)
                 received = self._decode_weights(reply.body)
             finally:
                 reply.body = None

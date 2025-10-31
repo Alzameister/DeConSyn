@@ -1,0 +1,24 @@
+original_data_path = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/data/cardio"
+categorical_columns = [
+    "gender",
+    "cholesterol",
+    "gluc",
+    "smoke",
+    "alco",
+    "active",
+    "cardio"
+]
+baseline_dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/runs/ctgan/ctgan_baseline/"
+baseline_model_name = "ctgan_adult_baseline.pkl"
+
+dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/exp/cardio/runs"
+# metrics = ["DCR", "NNDR", "AdversarialAccuracy", "Disclosure", "JS", "KS", "BasicStats", 'PCA', 'Consensus', 'Correlation', 'Utility']
+#metrics = ["DCR", "NNDR", "Disclosure", "JS", "KS", "BasicStats", 'PCA', 'Correlation']
+metrics = ["DCR", "Consensus", "PCA"]
+
+model_type = "ctgan"
+dataset_name = "cardio"
+keys = ["gender"]
+target = 'cardio'
+seed = 42
+iterations = 300

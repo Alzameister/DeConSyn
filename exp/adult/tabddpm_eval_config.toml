@@ -10,8 +10,13 @@ categorical_columns = [
     "native-country",
     'income'
 ]
-dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/runs/tabddpm/4A-30E-1000R-Full/run-20251016-064516-4Agents-30Epochs-1000Iterations-full-tabddpm"
-metrics = ["DCR", "NNDR", "AdversarialAccuracy", "Disclosure", "JS", "KS", "BasicStats", 'PCA', 'Consensus', 'Correlation']
+
+baseline_dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/runs/tabddpm/tabddpm_baseline/"
+baseline_model_name = "model.pt"
+
+dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/exp/adult/runs/tabddpm/"
+metrics = ["DCR", "NNDR", "AdversarialAccuracy", "Disclosure", "JS", "KS", "BasicStats", 'PCA', 'Consensus', 'Correlation', 'Utility', 'Distribution']
+#metrics = ["DCR", "NNDR", "Disclosure", "JS", "KS", "BasicStats", 'PCA', 'Correlation']
 model_type = "tabddpm"
 dataset_name = "adult"
 keys = ["age", "education", "marital-status", "occupation"]

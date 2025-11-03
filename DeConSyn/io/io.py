@@ -29,7 +29,8 @@ def get_repo_root(start: str | Path | None = None) -> Path:
 
 def get_config_dir(repo_root: str | Path | None = None) -> Path:
     root = Path(repo_root) if repo_root else get_repo_root()
-    return (root / "DeFeSyn" / "models" / "tab_ddpm" / "configs").resolve()
+    return (root / "exp").resolve()
+    # return (root / "DeFeSyn" / "models" / "tab_ddpm" / "configs").resolve()
 
 def runs_dir(repo_root: str | Path | None = None) -> Path:
     root = Path(repo_root) if repo_root else get_repo_root()

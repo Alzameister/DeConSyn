@@ -24,6 +24,7 @@ from DeConSyn.training_framework.communication.receive_behaviour import ReceiveB
 from DeConSyn.training_framework.communication.barrier_behaviour import BarrierHelloBehaviour, BarrierAckRouter
 from DeConSyn.training_framework.communication.presence_behaviour import PresenceBehaviour
 from DeConSyn.io.io import get_repo_root
+from DeConSyn.utils.seed import set_global_seed
 
 
 @dataclass(frozen=True)
@@ -132,6 +133,7 @@ class NodeAgent(Agent):
         self.loss_values = pd.DataFrame(columns=["Epoch", "Generator Loss", "Discriminator Loss"])
 
         self.is_final = False
+        set_global_seed()
 
     async def setup(self):
         self.log.info("Setting up NodeAgent...")

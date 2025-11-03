@@ -110,6 +110,22 @@ class DataTransformer:
             np.save(output_dir / "y_test.npy", test_df[self.target].to_numpy())
 
     @staticmethod
+    def save_full_npy(
+            df: pd.DataFrame,
+            output_dir: Path,
+            cat_cols: list,
+            target: str,
+            suffix: str = ""
+    ):
+        output_dir.mkdir(parents=True, exist_ok=True)
+        num_cols = [col for col in df.columns if col not in cat_cols + [target]]
+
+        np.save(output_dir / f'X_num{suffix}.npy', df[num_cols].to_numpy(dtype=np.float32))
+        np.save(output_dir / f'X_cat{suffix}.npy', df[cat_cols].to_numpy())
+        np.save(output_dir / f'y{suffix}.npy', df[target].to_numpy()
+    )
+
+    @staticmethod
     def save_split_info(
             df: pd.DataFrame,
             output_dir: Path,

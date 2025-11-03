@@ -80,6 +80,7 @@ class TrainingState(BaseState):
             except Exception as e:
                 raise e
         elif self.agent.model_type.lower() == "ctgan":
+            self.log.info(f"Agent {self.agent.id} using CTGAN model")
             self.agent.model: Model = CTGANModel(
                 data_transformer=self.agent.data_transformer,
                 data=part_train,

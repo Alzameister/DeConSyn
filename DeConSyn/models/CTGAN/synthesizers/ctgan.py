@@ -159,7 +159,7 @@ class CTGAN(BaseSynthesizer):
         verbose=False,
         epochs=300,
         pac=10,
-        cuda=True,
+        cuda=False
     ):
         assert batch_size % 2 == 0
 
@@ -197,6 +197,7 @@ class CTGAN(BaseSynthesizer):
         self.loss_values = None
 
         self.train_data = None
+        self.set_random_state(42)
 
     @staticmethod
     def _gumbel_softmax(logits, tau=1, hard=False, eps=1e-10, dim=-1):
@@ -344,7 +345,7 @@ class CTGAN(BaseSynthesizer):
             *,
             gen_state_dict=None,  # NEW (optional)
             dis_state_dict=None,  # NEW (optional)
-            strict=True  # NEW: pass-through to load_state_dict
+            strict=True  # NEW: pass-through to load_state_dic
     ):
         """Fit the CTGAN Synthesizer models to the training data.
 

@@ -91,7 +91,7 @@ async def run(
 
     # prepare data
     csv_path = data_root + "/csv"
-    #transformer = DataTransformer(data_root, ADULT_TARGET, ADULT_CATEGORICAL_COLUMNS)
+    transformer = DataTransformer(data_root, ADULT_TARGET, ADULT_CATEGORICAL_COLUMNS)
     #transformer = DataTransformer(data_root, CARDIO_TARGET, CARDIO_CATEGORICAL_COLUMNS)
     #transformer.save_csv(Path(csv_path))
     npy_path = data_root + "/npy"
@@ -101,7 +101,9 @@ async def run(
     loader = DatasetLoader(data_root, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET)
     #loader = DatasetLoader(data_root, CARDIO_CATEGORICAL_COLUMNS, CARDIO_TARGET)
     full_train = loader.get_train()
+    #DataTransformer.save_full_npy(full_train, Path(npy_path), CARDIO_CATEGORICAL_COLUMNS, CARDIO_TARGET, '_train')
     full_test = loader.get_test()
+    #DataTransformer.save_full_npy(full_test, Path(npy_path), CARDIO_CATEGORICAL_COLUMNS, CARDIO_TARGET, '_test')
     splits = loader.split_iid(nr_agents, seed=seed)
     test_splits = loader.split_test_iid(nr_agents, seed=seed)
 
@@ -118,7 +120,7 @@ async def run(
             i,
             ADULT_CATEGORICAL_COLUMNS,
             ADULT_TARGET
-            #CARDIO_CATEGORICAL_COLUMNS
+            #CARDIO_CATEGORICAL_COLUMNS,
             #CARDIO_TARGET
         )
         DataTransformer.save_test_split_npy(
@@ -158,7 +160,8 @@ async def run(
                 run_id=run_id,
                 model_type=model_type,
                 real_data_path=npy_path + f"/splits/{nr_agents}/split_{i}" ,
-                target=CARDIO_TARGET,
+                target=ADULT_TARGET,
+                #target=CARDIO_TARGET,
                 cat_encoder=loader.get_cat_oe(),
                 num_encoder=loader.get_num_transformer(),
                 y_encoder=loader.get_y_oe(),

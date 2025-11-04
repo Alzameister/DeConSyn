@@ -88,6 +88,17 @@ class TrainingState(BaseState):
                 epochs=self._epochs,
                 verbose=True,
                 device=self.agent.device,
+                # embedding_dim=self.agent.embedding_dim,
+                # generator_dim=self.agent.generator_dim,
+                # discriminator_dim=self.agent.discriminator_dim,
+                # generator_lr=self.agent.generator_lr,
+                # generator_decay=self.agent.generator_decay,
+                # discriminator_lr=self.agent.discriminator_lr,
+                # discriminator_decay=self.agent.discriminator_decay,
+                # batch_size=self.agent.batch_size,
+                # discriminator_steps=self.agent.discriminator_steps,
+                # log_frequency=self.agent.log_frequency,
+                # pac=self.agent.pac
             )
         else:
             self.agent.log.error("No Model found for type '{}'", self.agent.model_type)

@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import networkx as nx
 from matplotlib import pyplot as plt
 
@@ -100,9 +102,35 @@ class Graph:
         return topology
 
 if __name__ == "__main__":
-    nr_agents = 10
+    n= 10
+    k = 4
+    p = 0.1
+    seed = 42
 
-    topology = Graph.small_world(nr_agents)
-    for agent, neighbors in topology.items():
-        print(f"{agent} neighbors: {neighbors}")
-        print(f"Number of neighbors: {len(neighbors)}")
+    G_ring = nx.cycle_graph(n)
+    G_full = nx.complete_graph(n)
+    G_sw = nx.watts_strogatz_graph(n, k, p, seed=seed)
+
+    pos = nx.circular_layout(G_ring)
+
+    plt.figure(figsize=(12, 4), dpi=200)
+
+    ax1 = plt.subplot(1, 3, 1)
+    nx.draw(G_ring, pos=pos, with_labels=False, node_size=500, width=1.5)
+    ax1.set_title(f"Ring (n={n})")
+    ax1.set_axis_off()
+
+    ax2 = plt.subplot(1, 3, 2)
+    nx.draw(G_sw, pos=pos, with_labels=False, node_size=500, width=1.5)
+    ax2.set_title(f"Small-World (n={n}, k={k}, p={p})")
+    ax2.set_axis_off()
+
+    ax3 = plt.subplot(1, 3, 3)
+    nx.draw(G_full, pos=pos, with_labels=False, node_size=500, width=1.0)
+    ax3.set_title(f"Fully Connected (n={n})")
+    ax3.set_axis_off()
+
+    plt.tight_layout()
+    plt_path = Path("../../plots")
+    plt_path.mkdir(parents=True, exist_ok=True)
+    plt.savefig("../../plots/topologies_side_by_side.png", bbox_inches="tight")

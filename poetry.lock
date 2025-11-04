@@ -3646,6 +3646,17 @@ xep-0444-compliance = ["emoji"]
 xep-0454 = ["cryptography"]
 
 [[package]]
+name = "sns"
+version = "0.1"
+description = "SNS utils"
+optional = false
+python-versions = "*"
+groups = ["main"]
+files = [
+    {file = "sns-0.1.tar.gz", hash = "sha256:2d847d23eb8e0ea20054dbadabdecfafc529e4c7a16a6ce70205c4bf8ebc6cf4"},
+]
+
+[[package]]
 name = "spade"
 version = "4.1.2"
 description = "Smart Python Agent Development Environment"
@@ -4478,4 +4489,4 @@ cffi = ["cffi (>=1.17,<2.0) ; platform_python_implementation != \"PyPy\" and pyt
 [metadata]
 lock-version = "2.1"
 python-versions = "3.11.9"
-content-hash = "b5e9de5b950faad2b66ba89806d0701f5cb27ed09b07b36bf217b44c652d6dd0"
+content-hash = "fe28330233177961e8391e6751200a3e49466bd6c36e6c98d55526ee671a8c49"

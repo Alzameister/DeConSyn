@@ -32,15 +32,16 @@ DEST_LOGS="/mnt/c/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/logs"
 SSH_OPTS="-p $LAPTOP_PORT -o IdentitiesOnly=yes -i $LAPTOP_KEY -o StrictHostKeyChecking=accept-new"
 RSYNC_FLAGS="-a --no-perms --no-owner --no-group -h --info=progress2 --partial --append-verify"
 
-PROJECT_ROOT="/home/ubuntu/FeDeSyn"
-PYTHON_EXEC="$PROJECT_ROOT/.venv/bin/python"
-SCRIPT="$PROJECT_ROOT/DeFeSyn/training_framework/start.py"
+PROJECT_ROOT="/home/ubuntu/DeConSyn"
+PYTHON_EXEC="/home/ubuntu/.cache/pypoetry/virtualenvs/defesyn-diyj7ln9-py3.11/bin/python"
+SCRIPT="$PROJECT_ROOT/DeConSyn/training_framework/start.py"
 
 RUNS_DIR="$PROJECT_ROOT/runs"
 LOGS_DIR="$PROJECT_ROOT/logs"
 
 #DATA_ROOT="$HOME/data/adult/"
-DATA_ROOT="$HOME/FeDeSyn/data/adult"
+#DATA_ROOT="$HOME/DeConSyn/data/adult"
+DATA_ROOT="$HOME/DeConSyn/data/cardio"
 MANIFEST="manifest.yaml"
 SEED=42
 N_JOBS=1
@@ -50,6 +51,8 @@ SLEEP_SECS=10
 ALPHA=1.0
 K=4
 P=0.1
+#CONFIG_PATH="$HOME/DeConSyn/exp/adult/tabddpm_config.toml"
+CONFIG_PATH="$HOME/DeConSyn/exp/cardio/tabddpm_config.toml"
 
 # ----------------------------
 # Inputs
@@ -131,7 +134,8 @@ run_once() {
       --seed "$SEED" \
       --n-jobs "$N_JOBS" \
       --log-level "$LOG_LEVEL" \
-      --model-type "$model_type"
+      --model-type "$model_type" \
+      --config "$CONFIG_PATH"
   )
 
   echo ">>> Finished: agents=$agents, epochs=$epochs, iterations=$iterations, topology=$topology, model_type=$model_type"

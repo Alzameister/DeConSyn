@@ -113,7 +113,7 @@ def eval_baseline(config):
 
 def eval_iterations(config):
     iterations = config['iterations']
-    steps = 10
+    steps = 100
     for i in range(steps, iterations + 1, steps):
         print(f"\nEvaluating iteration: {i}/{iterations}\n")
         config['iterations'] = i

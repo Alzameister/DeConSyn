@@ -1,3 +1,5 @@
+from abc import ABC, abstractmethod
+
 import pandas as pd
 from sklearn.linear_model import LogisticRegression
 from sklearn.metrics import f1_score
@@ -5,13 +7,23 @@ from sklearn.preprocessing import StandardScaler, LabelEncoder
 from sklearn.preprocessing import OneHotEncoder
 from sklearn.compose import ColumnTransformer
 from sklearn.pipeline import Pipeline
+from catboost import CatBoostClassifier, Pool
 
 
 def get_numerical_columns(df: pd.DataFrame, target: str, categorical_columns: list[str]) -> list[str]:
     exclude = set(categorical_columns + [target])
     return [col for col in df.select_dtypes(include='number').columns if col not in exclude]
 
-class LogisticRegressionEvaluator:
+class UtilityEvaluator(ABC):
+    @abstractmethod
+    def evaluate(self):
+        pass
+
+    @abstractmethod
+    def fit_model(self):
+        pass
+
+class LogisticRegressionEvaluator(UtilityEvaluator):
     def __init__(
             self,
             train: pd.DataFrame,
@@ -78,5 +90,53 @@ class LogisticRegressionEvaluator:
             self.fit_model()
         y_pred = self.model.predict(self.X_test)
         accuracy = self.model.score(self.X_test, self.y_test)
+        f1 = f1_score(self.y_test, y_pred, average='weighted')
+        return accuracy, f1
+
+class CatBoostEvaluator(UtilityEvaluator):
+    def __init__(
+            self,
+            train: pd.DataFrame,
+            test: pd.DataFrame,
+            target: str,
+            categorical_columns: list[str],
+            seed: int = 42
+    ):
+        self.seed = seed
+
+        self.categorical_columns = categorical_columns
+        self.numerical_columns = get_numerical_columns(train, target, categorical_columns)
+
+        self.train = train
+        self.X_train = train.drop(columns=[target])
+        self.y_train = train[target]
+
+        self.test = test
+        self.X_test = test.drop(columns=[target])
+        self.y_test = test[target]
+
+        self.y_train = self.y_train.astype(str).str.strip().str.replace(r'\.$', '', regex=True)
+        self.y_test = self.y_test.astype(str).str.strip().str.replace(r'\.$', '', regex=True)
+
+        self.target = target
+        self.model = CatBoostClassifier(random_seed=self.seed, verbose=False)
+
+    def fit_model(self):
+        train_pool = Pool(data=self.X_train, label=self.y_train, cat_features=self.categorical_columns)
+        self.model.fit(train_pool)
+
+    def evaluate(self):
+        """
+        Evaluate the CatBoost model on the test set.
+        Returns:
+            accuracy (float): The accuracy of the model on the test set.
+            f1 (float): The weighted F1 score of the model on the test set.
+        """
+        # If not trained yet, train the model
+        if self.model.tree_count_ is None:
+            self.fit_model()
+        test_pool = Pool(data=self.X_test, label=self.y_test, cat_features=self.categorical_columns)
+        y_pred = self.model.predict(test_pool)
+        accuracy = self.model.score(test_pool)
         f1 = f1_score(self.y_test, y_pred, average='weighted')
         return accuracy, f1

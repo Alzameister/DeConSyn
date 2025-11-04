@@ -4,15 +4,17 @@ import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
 import seaborn as sns
+import torch
 from sklearn.decomposition import PCA
 
 from DeConSyn.data.data_loader import DatasetLoader, ADULT_PATH, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET
 from DeConSyn.evaluation.consensus import consensus
 from DeConSyn.io.io import get_config_dir, load_model_pickle
+from DeConSyn.models.CTGAN.synthesizers.ctgan import CTGAN
 from DeConSyn.models.tab_ddpm.lib import load_config
 from DeConSyn.models.tab_ddpm.scripts.sample import sample
 from DeConSyn.utils.seed import set_global_seed
-from DeConSyn.evaluation.utility import LogisticRegressionEvaluator
+from DeConSyn.evaluation.utility import LogisticRegressionEvaluator, CatBoostEvaluator
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.distance.adversarial_accuracy_class import \
     AdversarialAccuracyCalculator
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_metrics.distance.dcr_class import \
@@ -52,6 +54,11 @@ class Evaluator:
             test_data: pd.DataFrame = None
     ):
         self.original_data: pd.DataFrame = original_data
+        numeric_cols = [col for col in self.original_data.columns if
+                        pd.api.types.is_numeric_dtype(self.original_data[col])]
+        categorical_cols = [col for col in self.original_data.columns if
+                            not pd.api.types.is_numeric_dtype(self.original_data[col])]
+        self.original_data = self.original_data[numeric_cols + categorical_cols]
         self.test_data: pd.DataFrame = test_data
         self.data_dir: Path = Path(original_data_path)
         self.categorical_columns: list[str] = categorical_columns
@@ -83,6 +90,7 @@ class Evaluator:
         self.similarity_metrics = ["Mean", "Median", "Var", "JS", "KS", "WASSERSTEIN",
             "CorrelationPearson", "CorrelationSpearman", "PCA"]
         if iteration is not None:
+            self.iteration = iteration
             self.results_dir = self.run_dir / f"results-iter-{iteration:05d}"
         else:
             self.results_dir: Path = self.run_dir / "results"
@@ -107,9 +115,10 @@ class Evaluator:
 
         if not self.metrics == ['Consensus']:
             synthetic: pd.DataFrame = self.get_synthetic()
-            if self.test_data is not None:
+            if self.test_data is not None and 'Utility' in self.metrics:
                 self.calculate_utiltiy_metrics(synthetic, self.test_data)
-            self.plot_distributions(self.original_data, synthetic)
+            if 'Distribution' in self.metrics:
+                self.plot_distributions(self.original_data, synthetic)
             self.calculate_privacy_metrics(self.original_data, synthetic)
             self.calculate_similarity_metrics(self.original_data, synthetic)
 
@@ -137,7 +146,7 @@ class Evaluator:
             "JS": ["JS"],
             "KS": ["KS"],
             "WASSERSTEIN": ["WASSERSTEIN"],
-            "Utility": ["LogReg_Accuracy", "LogReg_F1"],
+            "Utility": ["LogReg_Accuracy", "LogReg_F1", "CatBoost_Accuracy", "CatBoost_F1"],
         }
         return metric_to_columns.get(metric, [metric])
 
@@ -168,6 +177,8 @@ class Evaluator:
         if self.results_file.exists():
             saved_results = pd.read_csv(self.results_file, index_col=0)
             for metric in self.metrics:
+                if metric == "Utility":
+                    pass
                 for col in self.get_result_columns_for_metric(metric):
                     if col in saved_results.columns and pd.notna(saved_results.at[self.synthetic_name, col]):
                         print(f"Loading saved metric column: {col}")
@@ -198,7 +209,7 @@ class Evaluator:
 
         int_cols = self.original_data.select_dtypes(include=['int64']).columns
         self.original_data[int_cols] = self.original_data[int_cols].astype('float64')
-        config = load_config(get_config_dir() / self.dataset_name / "config.toml")
+        config = load_config(get_config_dir() / self.dataset_name / "tabddpm_config.toml")
         set_global_seed(self.seed)
 
         sample(
@@ -256,7 +267,21 @@ class Evaluator:
                     synthetic[col] = synthetic[col].astype('Int64')
             return synthetic
 
-        model = load_model_pickle(Path(self.model_path))
+        model = CTGAN(epochs=0)
+        model_weights = torch.load(self.model_path, map_location='cpu')
+        generator_weights = model_weights['generator']
+        discriminator_weights = model_weights['discriminator']
+        model.fit(
+            self.original_data,
+            discrete_columns=self.categorical_columns,
+            gen_state_dict=generator_weights,
+            dis_state_dict=discriminator_weights,
+            strict=True
+        )
+        model._generator.load_state_dict(model_weights['generator'])
+        model._discriminator.load_state_dict(model_weights['discriminator'])
+
+        # model = load_model_pickle(Path(self.model_path))
 
         set_global_seed(self.seed)
         synthetic = model.sample(len(self.original_data))
@@ -342,6 +367,10 @@ class Evaluator:
                 print(f"{metric}: {value}")
 
     def calculate_utiltiy_metrics(self, synthetic: pd.DataFrame, test: pd.DataFrame):
+        # If LogReg / CatBoost in saved results, skip
+        if ("LogReg_Accuracy" in self.results.columns and pd.notna(self.results.at[self.synthetic_name, "LogReg_Accuracy"])) and \
+           ("CatBoost_Accuracy" in self.results.columns and pd.notna(self.results.at[self.synthetic_name, "CatBoost_Accuracy"])):
+            return
         categorical_columns = self.categorical_columns.copy()
         if self.target in categorical_columns:
             categorical_columns.remove(self.target)
@@ -353,12 +382,19 @@ class Evaluator:
         self.results.at[self.synthetic_name, "LogReg_F1"] = synth_f1
         print(f"Calculated Utility Metrics: LogReg_Accuracy: {synth_accuracy}, LogReg_F1: {synth_f1}")
 
+        cb_evaluator = CatBoostEvaluator(synthetic, test, self.target, categorical_columns, seed=self.seed)
+        synth_cb_accuracy, synth_cb_f1 = cb_evaluator.evaluate()
+        self.results.at[self.synthetic_name, "CatBoost_Accuracy"] = synth_cb_accuracy
+        self.results.at[self.synthetic_name, "CatBoost_F1"] = synth_cb_f1
+        print(f"Calculated Utility Metrics: CatBoost_Accuracy: {synth_cb_accuracy}, CatBoost_F1: {synth_cb_f1}")
+
 
     def calculate_correlation(self, original: pd.DataFrame, synthetic: pd.DataFrame):
         output_dir = self.results_dir / 'Correlation'
         output_dir.mkdir(parents=True, exist_ok=True)
         original_numeric = original.select_dtypes(include=[np.number])
         synthetic_numeric = synthetic.select_dtypes(include=[np.number])
+
         # Pearson
         pearson_corr = original_numeric.corr(method='pearson')
         synthetic_pearson_corr = synthetic_numeric.corr(method='pearson')
@@ -370,7 +406,7 @@ class Evaluator:
         pearson_corr.to_csv(output_dir / 'original_pearson_corr.csv')
         synthetic_pearson_corr.to_csv(output_dir / 'synthetic_pearson_corr.csv')
         pearson_diff.to_csv(output_dir / 'pearson_correlation_difference.csv')
-        diff_plot_path = output_dir / 'pearson_correlation_difference_heatmap.png'
+        diff_plot_path = output_dir / 'pearson_corr_diff_hm.png'
         plt.figure(figsize=(12, 10))
         sns.heatmap(pearson_diff, annot=True, fmt=".2f", cmap='viridis')
         plt.title('Pearson Correlation Difference Heatmap')
@@ -388,7 +424,7 @@ class Evaluator:
         spearman_corr.to_csv(output_dir / 'original_spearman_corr.csv')
         synthetic_spearman_corr.to_csv(output_dir / 'synthetic_spearman_corr.csv')
         spearman_diff.to_csv(output_dir / 'spearman_correlation_difference.csv')
-        diff_plot_path = output_dir / 'spearman_correlation_difference_heatmap.png'
+        diff_plot_path = output_dir / 'spearman_corr_diff_hm.png'
         plt.figure(figsize=(12, 10))
         sns.heatmap(spearman_diff, annot=True, fmt=".2f", cmap='viridis')
         plt.title('Spearman Correlation Difference Heatmap')
@@ -424,7 +460,10 @@ class Evaluator:
                 baseline_synthetic = pd.read_csv(baseline_synthetic_path)
                 self._plot_distributions_with_baseline(original, synthetic, baseline_synthetic)
 
+            self.plot_synthetic_distributions(synthetic)
+
         agent_count = self._get_agent_count()
+        topology = self._get_topology()
         output_dir = self.results_dir / 'Distributions'
         output_dir.mkdir(parents=True, exist_ok=True)
         plot_path = output_dir / f'{agent_count}-distributions-original.png'
@@ -438,7 +477,7 @@ class Evaluator:
         fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows))
         axes = axes.flatten()
 
-        fig.suptitle(f"Column Distributions: DeConSyn-{agent_count} (Original vs Synthetic)", fontsize=16)
+        fig.suptitle(f"Column Distributions: DeConSyn-{agent_count}-{topology} (Original vs Synthetic)", fontsize=16)
         for idx, column in enumerate(columns):
             ax = axes[idx]
             if column in self.categorical_columns:
@@ -450,13 +489,15 @@ class Evaluator:
                 width = 0.4
                 x = np.arange(len(all_cats))
                 ax.bar(x - width / 2, orig_freq, width=width, color='blue', alpha=0.7, label='Original')
-                ax.bar(x + width / 2, synth_freq, width=width, color='orange', alpha=0.7, label=f'DeConSyn-{agent_count}')
+                ax.bar(x + width / 2, synth_freq, width=width, color='orange', alpha=0.7, label=f'DeConSyn-{agent_count}-{topology}')
                 ax.set_xticks(x)
                 ax.set_xticklabels(all_cats, rotation=45, ha='right')
                 ax.set_ylabel('Proportion')
             else:
-                sns.histplot(original[column], color='blue', label='Original', stat='probability', ax=ax, alpha=0.3)
-                sns.histplot(synthetic[column], color='orange', label=f'DeConSyn-{agent_count}', stat='probability', ax=ax, alpha=0.3)
+                n = len(original[column])
+                bins = int(np.sqrt(n))
+                sns.histplot(original[column], bins=bins, color='blue', label='Original', stat='probability', ax=ax, alpha=0.3)
+                sns.histplot(synthetic[column], bins=bins, color='orange', label=f'DeConSyn-{agent_count}-{topology}', stat='probability', ax=ax, alpha=0.3)
                 # sns.kdeplot(original[column], color='blue', ax=ax)
                 # sns.kdeplot(synthetic[column], color='orange', ax=ax)
                 ax.set_ylabel('Density')
@@ -472,10 +513,55 @@ class Evaluator:
         plt.savefig(plot_path)
         plt.clf()
 
+    def plot_synthetic_distributions(self, synthetic: pd.DataFrame):
+        output_dir = self.run_dir / 'results' / 'synthetic_distributions'
+        output_dir.mkdir(parents=True, exist_ok=True)
+        agent_count = self._get_agent_count()
+        topology = self._get_topology()
+        plot_path = output_dir / f'{agent_count}-{self.iteration}-distributions-synthetic.png'
+        if plot_path.exists():
+            print("Synthetic Distribution plot already exists. Skipping plotting.")
+            return
+
+        columns = synthetic.columns
+        n_cols = 3
+        n_rows = int(np.ceil(len(columns) / n_cols))
+        fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows))
+        axes = axes.flatten()
+
+        fig.suptitle(f"Column Distributions: DeConSyn-{agent_count}-{topology}", fontsize=16)
+        for idx, column in enumerate(columns):
+            ax = axes[idx]
+            if column in self.categorical_columns:
+                synth_freq = synthetic[column].value_counts(normalize=True).sort_index()
+                all_cats = sorted(synth_freq.index)
+                synth_freq = synth_freq.reindex(all_cats, fill_value=0)
+                x = np.arange(len(all_cats))
+                ax.bar(x, synth_freq, width=0.4, color='orange', alpha=0.7, label=f'DeConSyn-{agent_count}-{topology}')
+                ax.set_xticks(x)
+                ax.set_xticklabels(all_cats, rotation=45, ha='right')
+                ax.set_ylabel('Proportion')
+            else:
+                n = len(synthetic[column])
+                bins = int(np.sqrt(n))
+                sns.histplot(synthetic[column], bins=bins, color='orange', label=f'DeConSyn-{agent_count}-{topology}', stat='probability', ax=ax, alpha=0.3)
+                ax.set_ylabel('Density')
+            ax.set_title(f'Distribution of {column}')
+            ax.set_xlabel(column)
+            ax.legend()
+
+        for j in range(idx + 1, len(axes)):
+            fig.delaxes(axes[j])
+
+        plt.tight_layout(rect=[0, 0, 1, 0.95])
+        plt.savefig(plot_path)
+        plt.clf()
+
     def _plot_distributions_with_baseline(self, original: pd.DataFrame, synthetic: pd.DataFrame, baseline_synthetic: pd.DataFrame):
         output_dir = self.results_dir / 'Distributions'
         output_dir.mkdir(parents=True, exist_ok=True)
         agent_count = self._get_agent_count()
+        topology = self._get_topology()
         plot_path = output_dir / f'{agent_count}-distributions-baseline.png'
         if plot_path.exists():
             print("Distribution plot already exists. Skipping plotting.")
@@ -487,7 +573,7 @@ class Evaluator:
         fig, axes = plt.subplots(n_rows, n_cols, figsize=(6 * n_cols, 4 * n_rows))
         axes = axes.flatten()
 
-        fig.suptitle(f"Column Distributions: DeConSyn-{agent_count} (Baseline vs Synthetic)", fontsize=16)
+        fig.suptitle(f"Column Distributions: DeConSyn-{agent_count}-{topology} (Baseline vs Synthetic)", fontsize=16)
         for idx, column in enumerate(columns):
             ax = axes[idx]
             if column in self.categorical_columns:
@@ -498,14 +584,16 @@ class Evaluator:
                 baseline_freq = baseline_freq.reindex(all_cats, fill_value=0)
                 x = np.arange(len(all_cats))
                 ax.bar(x + 0.2, baseline_freq, width=0.2, color='blue', alpha=0.5, label='DeConSyn-1')
-                ax.bar(x, synth_freq, width=0.2, color='orange', alpha=0.5, label=f'DeConSyn-{agent_count}')
+                ax.bar(x, synth_freq, width=0.2, color='orange', alpha=0.5, label=f'DeConSyn-{agent_count}-{topology}')
                 ax.set_xticks(x)
                 ax.set_xticklabels(all_cats, rotation=45, ha='right')
                 ax.set_ylabel('Proportion')
             else:
-                sns.histplot(baseline_synthetic[column], color='blue', label='DeConSyn-1', stat='probability',
+                n = len(original[column])
+                bins = int(np.sqrt(n))
+                sns.histplot(baseline_synthetic[column], bins=bins, color='blue', label='DeConSyn-1', stat='probability',
                              ax=ax, alpha=0.3)
-                sns.histplot(synthetic[column], color='orange', label=f'DeConSyn-{agent_count}', stat='probability', ax=ax, alpha=0.3)
+                sns.histplot(synthetic[column], bins=bins, color='orange', label=f'DeConSyn-{agent_count}-{topology}', stat='probability', ax=ax, alpha=0.3)
 
                 #sns.kdeplot(original[column], color='blue', ax=ax)
                 #sns.kdeplot(synthetic[column], color='orange', ax=ax)
@@ -529,6 +617,14 @@ class Evaluator:
             return int(agent_count_str[:-1])
         else:
             return 1
+
+    def _get_topology(self):
+        # Get topology from synthetic name '4A 1E 300R Full CTGAN' --> 'Full'
+        try:
+            topology_str = self.synthetic_name.split(' ')[-2]
+        except IndexError:
+            topology_str = 'Single Agent'
+        return topology_str
 
 
 if __name__ == "__main__":

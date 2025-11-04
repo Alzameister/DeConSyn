@@ -98,12 +98,12 @@ async def run(
 
     #logger.info(f"CSV saved to {csv_path}")
 
-    loader = DatasetLoader(data_root, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET)
-    #loader = DatasetLoader(data_root, CARDIO_CATEGORICAL_COLUMNS, CARDIO_TARGET)
+    #loader = DatasetLoader(data_root, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET)
+    loader = DatasetLoader(data_root, CARDIO_CATEGORICAL_COLUMNS, CARDIO_TARGET)
     full_train = loader.get_train()
-    #DataTransformer.save_full_npy(full_train, Path(npy_path), CARDIO_CATEGORICAL_COLUMNS, CARDIO_TARGET, '_train')
+    DataTransformer.save_full_npy(full_train, Path(npy_path), CARDIO_CATEGORICAL_COLUMNS, CARDIO_TARGET, '_train')
     full_test = loader.get_test()
-    #DataTransformer.save_full_npy(full_test, Path(npy_path), CARDIO_CATEGORICAL_COLUMNS, CARDIO_TARGET, '_test')
+    DataTransformer.save_full_npy(full_test, Path(npy_path), CARDIO_CATEGORICAL_COLUMNS, CARDIO_TARGET, '_test')
     splits = loader.split_iid(nr_agents, seed=seed)
     test_splits = loader.split_test_iid(nr_agents, seed=seed)
 
@@ -118,19 +118,19 @@ async def run(
             part,
             Path(npy_path) / "splits" / str(nr_agents),
             i,
-            ADULT_CATEGORICAL_COLUMNS,
-            ADULT_TARGET
-            #CARDIO_CATEGORICAL_COLUMNS,
-            #CARDIO_TARGET
+            #ADULT_CATEGORICAL_COLUMNS,
+            #ADULT_TARGET
+            CARDIO_CATEGORICAL_COLUMNS,
+            CARDIO_TARGET
         )
         DataTransformer.save_test_split_npy(
             test_splits[i],
             Path(npy_path) / "splits" / str(nr_agents),
             i,
-            ADULT_CATEGORICAL_COLUMNS,
-            ADULT_TARGET
-            #CARDIO_CATEGORICAL_COLUMNS,
-            #CARDIO_TARGET
+            #ADULT_CATEGORICAL_COLUMNS,
+            #ADULT_TARGET
+            CARDIO_CATEGORICAL_COLUMNS,
+            CARDIO_TARGET
         )
         logger.info(f"Agent {i} partition: {part.shape}, head:\n{part.head(3)}")
 
@@ -160,8 +160,8 @@ async def run(
                 run_id=run_id,
                 model_type=model_type,
                 real_data_path=npy_path + f"/splits/{nr_agents}/split_{i}" ,
-                target=ADULT_TARGET,
-                #target=CARDIO_TARGET,
+                #target=ADULT_TARGET,
+                target=CARDIO_TARGET,
                 cat_encoder=loader.get_cat_oe(),
                 num_encoder=loader.get_num_transformer(),
                 y_encoder=loader.get_y_oe(),

@@ -103,7 +103,7 @@ class BaseState(State, ABC):
         msg.set_metadata("token", token)
         await self.send(msg)
 
-    async def _send_gossip_request(self, peer: str, it: int, kind: str):
+    async def _send_gossip_request(self, peer: str, it: int, kind: str, blob: str):
         rid = f"{self.agent.id}-{it}-{uuid.uuid4().hex[:6]}"
         msg_id = f"{self.agent.id}-{it}-{uuid.uuid4().hex[:6]}"
         version = str(it)
@@ -115,6 +115,8 @@ class BaseState(State, ABC):
         msg.set_metadata("rid", rid)
         msg.set_metadata("version", version)
         msg.set_metadata("kind", kind)
+        msg.set_metadata("eps", f"{self.agent.consensus.get_eps():.12f}")
+        msg.body = blob
         await self.send(msg)
         self.ev("REQUEST", "send", neighbor=str(peer), msg_id=rid, ver=int(version), kind=str(kind))
 

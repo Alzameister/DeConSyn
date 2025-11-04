@@ -37,6 +37,8 @@ class ReceiveBehaviour(CyclicBehaviour):
         perf = (msg.get_metadata("performative") or "").strip()
         kind = (msg.get_metadata("kind") or "push").strip()
         sender = PresenceBehaviour.strip_jid(msg.sender)
+        blob = msg.body
+        received_weights = self.agent.model.decode(blob)
 
 
         if not (perf == "inform" and mtype == "gossip-req"):
@@ -50,7 +52,7 @@ class ReceiveBehaviour(CyclicBehaviour):
             msg_version = -1
 
         if kind == "push":
-            self.agent.pending_gossip[sender] = {"want_pull": True, "seen_at": self.agent.current_iteration, "rid": rid}
+            self.agent.pending_gossip[sender] = {"seen_at": self.agent.current_iteration, "weights": received_weights, "eps": self._safe_eps(), "msg_id": msg_id}
         else:
             pass
 

@@ -26,7 +26,8 @@ class PushState(BaseState):
             self.set_next_state(TRAINING_STATE)
             return
 
-        rid, _ver = await self._send_gossip_request(peer, it, kind="push")
+        pkg = self.agent.model.encode()
+        rid, _ver = await self._send_gossip_request(peer, it, kind="push", blob=pkg)
 
         fut = asyncio.get_running_loop().create_future()
         waiter = WaitResponseBehaviour(fut, peer)

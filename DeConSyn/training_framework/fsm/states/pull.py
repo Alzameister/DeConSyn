@@ -17,7 +17,7 @@ class PullState(BaseState):
         """
         return [
             k for k, v in self.agent.pending_gossip.items()
-            if isinstance(v, dict) and v.get("want_pull") is True
+            if isinstance(v, dict) and v.get("weights") is not None
         ]
 
     async def run(self):
@@ -34,35 +34,14 @@ class PullState(BaseState):
         consumed = 0
         dict_before = len(neighbors)
         t0 = time.perf_counter()
-
+        pkg = self.agent.model.encode()
 
         for neighbor in neighbors:
-            rid, _ = await self._send_gossip_request(neighbor, self.agent.current_iteration, kind="pull")
+            neighbor_data = self.agent.pending_gossip.get(neighbor)
+            received = neighbor_data.get("weights")
+            eps_j = neighbor_data.get("eps")
+            msg_id = neighbor_data.get("msg_id")
 
-            fut = asyncio.get_running_loop().create_future()
-            waiter = WaitResponseBehaviour(fut, neighbor, timeout=180.0)
-            self.agent.add_behaviour(
-                waiter,
-                Template(
-                    metadata={"performative": MT_INFORM, "type": T_GOSSIP_WEIGHTS, "rid": rid}                )
-            )
-
-            self.log.info("PULL: waiting for weights from {} (rid'={})", neighbor, rid)
-            reply = await fut
-            with contextlib.suppress(Exception):
-                waiter.kill()
-
-            if not reply:
-                self.log.warning("PULL: no weights from {} (rid={})", neighbor, rid)
-                self.agent.pending_gossip.pop(neighbor, None)
-                continue
-
-            try:
-                received = self._decode_weights(reply.body)
-            finally:
-                reply.body = None
-
-            eps_j = self._msg_eps(reply, fallback=self.agent.consensus.get_eps())
             with torch.no_grad():
                 self.agent.weights = self.agent.consensus.step_with_neighbor(
                     x_i=self.agent.weights,
@@ -80,9 +59,9 @@ class PullState(BaseState):
             self.ev(
                 "PULL_RECV", "ok",
                 local_step=self.agent.current_iteration,
-                neighbor_id=str(reply.sender),
-                msg_id=reply.get_metadata("msg_id"),
-                version=int(reply.get_metadata("version") or self.agent.current_iteration),
+                neighbor_id=str(neighbor),
+                msg_id=str(msg_id),
+                version=int(self.agent.current_iteration),
                 timeout=False,
             )
             self.agent.pending_gossip.pop(neighbor, None)

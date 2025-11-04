@@ -1,0 +1,26 @@
+seed=42
+
+[deconsyn_params]
+dataset_name = "adult"
+data_root = "../../data/adult/"
+categorical_columns = [
+        "workclass",
+        "education",
+        "marital-status",
+        "occupation",
+        "relationship",
+        "race",
+        "sex",
+        "native-country"
+]
+target = "income"
+
+n = 3
+epochs = 1
+iterations = 15
+topology = "ring"
+k = 4
+p = 0.1
+alpha = 1.0
+gen_model_type = "ctgan"
+log_level = "info"

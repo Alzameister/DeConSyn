@@ -17,7 +17,7 @@ target = "income"
 
 n = 3
 epochs = 1
-iterations = 15
+iterations = 300
 topology = "ring"
 k = 4
 p = 0.1

@@ -21,8 +21,8 @@ categorical_columns = [
 target = "income"
 
 n = 3
-epochs = 1
-iterations = 15
+epochs = 30
+iterations = 1000
 topology = "ring"
 k = 4
 p = 0.1

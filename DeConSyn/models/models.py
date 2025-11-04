@@ -19,7 +19,7 @@ from DeConSyn.models.tab_ddpm.scripts.utils_train import make_dataset
 from DeConSyn.models.tab_ddpm.trainer import Trainer, train
 from DeConSyn.io.serialization import encode_state_dict_pair_blob, decode_state_dict_pair_blob
 from DeConSyn.io.snapshots import snapshot_state_dict_pair
-from DeConSyn.io.io import get_repo_root, get_config_dir
+from DeConSyn.io.io import get_repo_root, get_config_dir, load_model_pickle
 
 
 class Model(ABC):
@@ -86,6 +86,17 @@ class CTGANModel(Model):
             data_transformer = None,
             verbose: bool = True,
             device: str = "cpu",
+            embedding_dim=128,
+            generator_dim=(256, 256),
+            discriminator_dim=(256, 256),
+            generator_lr=2e-4,
+            generator_decay=1e-6,
+            discriminator_lr=2e-4,
+            discriminator_decay=1e-6,
+            batch_size=500,
+            discriminator_steps=1,
+            log_frequency=True,
+            pac=10,
     ):
         super().__init__(data, device)
         self.discrete_columns = list(discrete_columns or [])
@@ -93,8 +104,19 @@ class CTGANModel(Model):
         self.verbose = bool(verbose)
         self.data_transformer = data_transformer
 
-        self.model = CTGAN(epochs=self.epochs, verbose=self.verbose, cuda=self.use_cuda_flag)
-
+        self.model = CTGAN(epochs=self.epochs, verbose=self.verbose, cuda=self.use_cuda_flag,
+                           embedding_dim=embedding_dim,
+                           generator_dim=generator_dim,
+                           discriminator_dim=discriminator_dim,
+                           generator_lr=generator_lr,
+                            generator_decay=generator_decay,
+                            discriminator_lr=discriminator_lr,
+                            discriminator_decay=discriminator_decay,
+                            batch_size=batch_size,
+                            discriminator_steps=discriminator_steps,
+                            log_frequency=log_frequency,
+                            pac=pac
+                           )
         self.weights: dict[str, dict[str, torch.Tensor]] = {}
         self._weights_lock = threading.RLock()
         self._cpu_weights: dict[str, dict[str, torch.Tensor]] | None  = None
@@ -213,6 +235,7 @@ class CTGANModel(Model):
         self.set_weights(self.decode(package))
 
     def get_loss_values(self):
+        return self._loss_values
         return getattr(self.model, "loss_values", None)
 
     def clear_loss_values(self):
@@ -220,6 +243,22 @@ class CTGANModel(Model):
             self.model.loss_values = None
 
     def fit_baseline(self):
+        root = get_repo_root()
+        path = root / "exp" / "adult" / "runs" / "ctgan" / "ctgan_baseline"
+        if os.path.exists(path):
+            self.model = load_model_pickle(path / "ctgan_adult_baseline.pkl", device=str(self.device))
+            generator_dict = self.model._generator.state_dict()
+            discriminator_dict = self.model._discriminator.state_dict()
+            weights = {
+                "generator": generator_dict,
+                "discriminator": discriminator_dict
+            }
+            weights_path = path / "ctgan_adult_baseline.pt"
+            torch.save(weights, weights_path)
+            return
+
+
+         # Fit CTGAN baseline
         self.epochs = 300
         self.model = CTGAN(epochs=self.epochs, verbose=True, cuda=self.use_cuda_flag)
         self.model.fit(
@@ -235,10 +274,20 @@ class CTGANModel(Model):
         # Save model under runs/ctgan_baseline
 
         root = get_repo_root()
-        path = root / "runs" / "ctgan_baseline"
+        path = root / "exp" / "adult" / "runs" / "ctgan" / "ctgan_baseline"
         os.makedirs(path, exist_ok=True)
         model_path = path / "ctgan_adult_baseline.pkl"
         self.model.save(model_path)
+        generator_dict = self.model._generator.state_dict()
+        discriminator_dict = self.model._discriminator.state_dict()
+        weights = {
+            "generator": generator_dict,
+            "discriminator": discriminator_dict
+        }
+        weights_path = path / "ctgan_adult_baseline.pt"
+        torch.save(weights, weights_path)
+        lv = self.model.loss_values
+        lv.to_csv(path / "loss_values.csv", index=False)
 
 class TabDDPMModel(Model):
     def __init__(
@@ -271,7 +320,6 @@ class TabDDPMModel(Model):
         train_main = config['train']['main']
         T_dict = config['train']['T']
         num_numerical_features = config['num_numerical_features']
-
 
         real_data_path = os.path.normpath(real_data_path)
 
@@ -470,7 +518,7 @@ if __name__ == '__main__':
     transformer = loader.get_data_transformer()
     encoder = loader.get_cat_oe()
     config_dir = get_config_dir()
-    raw_config = config_dir / "config.toml"
+    raw_config = config_dir / "adult" / "tabddpm_config.toml"
     config = load_config(raw_config)
     root = get_repo_root()
     path = root / "runs" / "tabddpm" / "tabddpm_baseline"

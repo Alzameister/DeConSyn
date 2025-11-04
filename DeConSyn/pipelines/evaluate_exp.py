@@ -12,10 +12,12 @@ def format_run_name(run_dir_name):
     agents = re.search(r'(\d+)Agents', run_dir_name)
     epochs = re.search(r'(\d+)Epochs', run_dir_name)
     iterations = re.search(r'(\d+)Iterations', run_dir_name)
+    # Get topology from 'run-20251103-120213-4Agents-1Epochs-300Iterations-ring-ctgan' --> 'ring', or 'smallworld' etc.
+    topology = re.search(r'(ring|full|smallworld)', run_dir_name)
     full = 'Full' if 'full' in run_dir_name.lower() else ''
     model_type = parts[-1].upper()
 
-    formatted = f"{agents.group(1)}A {epochs.group(1)}E {iterations.group(1)}R {full} {model_type}".strip()
+    formatted = f"{agents.group(1)}A {epochs.group(1)}E {iterations.group(1)}R {topology.group(1).capitalize()} {model_type}".strip()
     return formatted
 
 def eval_agents(config):
@@ -42,7 +44,8 @@ def eval_agents(config):
         i = config["iterations"]
         while True:
             if model_type == "ctgan":
-                model_name = f"iter-{i:05d}-model.pkl"
+                #model_name = f"iter-{i:05d}-model.pkl"
+                model_name = f"iter-{i:05d}-weights.pt"
             elif model_type == "tabddpm":
                 model_name = f"iter-{i:05d}-weights.pt"
             model_path = agent_dir / model_name
@@ -108,17 +111,28 @@ def eval_baseline(config):
     print(f"\n========= SUMMARY for Baseline ({config['baseline_model_name']}) =========\n")
     print(results)
 
+def eval_iterations(config):
+    iterations = config['iterations']
+    steps = 10
+    for i in range(steps, iterations + 1, steps):
+        print(f"\nEvaluating iteration: {i}/{iterations}\n")
+        config['iterations'] = i
+        eval_agents(config)
+
 
 
 def main():
     parser = argparse.ArgumentParser(description="Evaluate experiments in a given directory.")
     parser.add_argument("--config", type=str, required=True, help="Path to the evaluation configuration file.")
     parser.add_argument("--baseline", action="store_true", help="Evaluate baseline.")
+    parser.add_argument("--iterations", action="store_true", help="Evaluate across iterations.")
     args = parser.parse_args()
 
     config = load_config(args.config)
     if args.baseline:
         eval_baseline(config)
+    elif args.iterations:
+        eval_iterations(config)
     else:
         eval_agents(config)
 

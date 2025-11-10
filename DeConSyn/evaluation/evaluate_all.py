@@ -12,7 +12,7 @@ def _csv_list(s):
 def eval_agents(args):
     keys = ["age", "education", "marital-status", "occupation"]
     target = 'income'
-    run_dir = Path(args.run_dir)
+    run_dir = Path(args.log_dir)
 
     # Find all agent directories (also inside nested folders)
     agent_dirs = list(run_dir.rglob("agent_*"))
@@ -57,7 +57,7 @@ def eval_agents(args):
 def eval_agents_it(args, iterations):
     keys = ["age", "education", "marital-status", "occupation"]
     target = 'income'
-    run_dir = Path(args.run_dir)
+    run_dir = Path(args.log_dir)
 
     # Find all agent directories (also inside nested folders)
     agent_dirs = list(run_dir.rglob("agent_*"))

@@ -135,6 +135,13 @@ def get_baseline_df(model_type="ctgan"):
         return pd.read_csv(baseline_path)
     return None
 
+def get_fedtabdiff_df(n, dataset_name="adult"):
+    runs_path = get_runs_path("FedTabDiff", dataset_name)
+    fedtabdiff_path = os.path.join(runs_path, f"{n}A", 'results.csv')
+    if os.path.exists(fedtabdiff_path):
+        return pd.read_csv(fedtabdiff_path)
+    return None
+
 def get_run_parameters(run_name: str) -> dict:
     # Example: '01-7A-1E-500R-Full'
     parts = run_name.split('-')

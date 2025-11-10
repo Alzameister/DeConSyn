@@ -142,7 +142,7 @@ class Evaluator:
             "NNDR": ["NNDR"],
             "AdversarialAccuracy": ["AdversarialAccuracy"],
             "RepU": ["RepU"],
-            "Disclosure": ["Disclosure"],
+            "Disclosure": ["Disclosure", "RepU"],
             "JS": ["JS"],
             "KS": ["KS"],
             "WASSERSTEIN": ["WASSERSTEIN"],
@@ -167,6 +167,12 @@ class Evaluator:
                 baseline_dist_plot_path = self.results_dir / 'Distribution' / 'all_distributions_baseline.png'
                 if not all_dist_plot_path.exists() or not baseline_dist_plot_path.exists():
                     return False
+            if metric == "Disclosure":
+                # Check both RepU and Disclosure columns
+                for col in ["RepU", "Disclosure"]:
+                    if col not in self.results.columns or pd.isna(self.results.at[self.synthetic_name, col]):
+                        return False
+                continue
             for col in self.get_result_columns_for_metric(metric):
                 if col not in self.results.columns or pd.isna(self.results.at[self.synthetic_name, col]):
                     return False
@@ -264,7 +270,9 @@ class Evaluator:
             # Ensure numerical are float
             for col in self.original_data.columns:
                 if col not in self.categorical_columns and col != self.target:
-                    synthetic[col] = synthetic[col].astype('Int64')
+                    synthetic[col] = synthetic[col].astype('float64')
+            int_cols = self.original_data.select_dtypes(include=['int64']).columns
+            self.original_data[int_cols] = self.original_data[int_cols].astype('float64')
             return synthetic
 
         model = CTGAN(epochs=0)
@@ -294,6 +302,15 @@ class Evaluator:
         print("Calculating privacy metrics...")
         # Only go through self.metrics that are in privacy_metrics
         for metric in self.metrics:
+            if metric == "Disclosure":
+                if pd.isna(self.results.at[self.synthetic_name, metric]) or (pd.isna(self.results.at[self.synthetic_name, "RepU"])):
+                    print(f"Calculating {metric}...")
+                    disco_calculator = DisclosureCalculator(original=original, synthetic=synthetic,
+                                                            original_name=self.dataset_name, synthetic_name=self.synthetic_name,
+                                                            keys=self.keys, target=self.target)
+                    repu_value, disco_value = disco_calculator.evaluate()
+                    self.results.at[self.synthetic_name, "RepU"] = repu_value
+                    self.results.at[self.synthetic_name, "Disclosure"] = disco_value
             if metric in self.privacy_metrics and pd.isna(self.results.at[self.synthetic_name, metric]):
                 print(f"Calculating {metric}...")
                 if metric == "DCR":
@@ -311,13 +328,6 @@ class Evaluator:
                                                                   original_name=self.dataset_name, synthetic_name=self.synthetic_name)
                     aa_value = aa_calculator.evaluate()
                     self.results.at[self.synthetic_name, "AdversarialAccuracy"] = aa_value
-                if metric == "Disclosure":
-                    disco_calculator = DisclosureCalculator(original=original, synthetic=synthetic,
-                                                            original_name=self.dataset_name, synthetic_name=self.synthetic_name,
-                                                            keys=self.keys, target=self.target)
-                    repu_value, disco_value = disco_calculator.evaluate()
-                    self.results.at[self.synthetic_name, "RepU"] = repu_value
-                    self.results.at[self.synthetic_name, "Disclosure"] = disco_value
 
         print("Calculated Privacy Metrics:")
         for metric in self.privacy_metrics:

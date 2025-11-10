@@ -184,8 +184,6 @@ if metrics:
     rows = math.ceil(n / cols)
     fig, axes = plt.subplots(rows, cols, figsize=(cols * 6, rows * 4), squeeze=False)
     for idx, metric in enumerate(metrics):
-        if metric == 'AdversarialAccuracy':
-            continue
         r, c = divmod(idx, cols)
         ax = axes[r][c]
         #subset = df[df["Metric"] == metric].sort_values("Mean_t", ascending=False)

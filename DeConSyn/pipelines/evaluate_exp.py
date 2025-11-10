@@ -36,6 +36,9 @@ def eval_agents(config):
     test_data = loader.get_test()
 
     for agent_dir in agent_dirs:
+        agent_nr = agent_dir.name.split('_')[-1]
+        # if not agent_nr.startswith('00'):
+        #    continue
         run_dir_name = agent_dir.parent.name
         model_type = run_dir_name.split('-')[-1]
         print("Evaluating agent:", agent_dir.name, "from run:", run_dir_name)

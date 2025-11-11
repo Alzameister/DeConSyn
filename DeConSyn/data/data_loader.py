@@ -30,6 +30,15 @@ CARDIO_CATEGORICAL_COLUMNS = [
 CARDIO_TARGET = "cardio"
 CARDIO_PATH = "/data/cardio"
 
+CHURN_CATEGORICAL_COLUMNS = [
+    'Geography',
+    'Gender',
+    'HasCrCard',
+    'IsActiveMember'
+]
+CHURN_TARGET = 'Exited'
+CHURN_PATH = "/data/churn"
+
 
 class DatasetLoader:
     def __init__(self, dataset_dir: str, categorical_cols: list[str] = None, target: str = None):

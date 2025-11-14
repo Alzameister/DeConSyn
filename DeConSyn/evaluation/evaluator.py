@@ -8,8 +8,8 @@ import torch
 from sklearn.decomposition import PCA
 
 from DeConSyn.data.data_loader import DatasetLoader, ADULT_PATH, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET
-from DeConSyn.evaluation.consensus import consensus
-from DeConSyn.io.io import get_config_dir, load_model_pickle
+from DeConSyn.evaluation.plots.consensus import consensus
+from DeConSyn.io.io import get_config_dir
 from DeConSyn.models.CTGAN.synthesizers.ctgan import CTGAN
 from DeConSyn.models.tab_ddpm.lib import load_config
 from DeConSyn.models.tab_ddpm.scripts.sample import sample
@@ -25,6 +25,8 @@ from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_me
     NNDRCalculator
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.basic_stats import \
     BasicStatsCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.correlation import \
+    CorrelationCalculator, CorrelationMethod
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.js_similarity import \
     JSCalculator
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.ks_test import \
@@ -173,6 +175,8 @@ class Evaluator:
                     if col not in self.results.columns or pd.isna(self.results.at[self.synthetic_name, col]):
                         return False
                 continue
+            if 'Correlation' in metric:
+                continue
             for col in self.get_result_columns_for_metric(metric):
                 if col not in self.results.columns or pd.isna(self.results.at[self.synthetic_name, col]):
                     return False
@@ -185,6 +189,8 @@ class Evaluator:
             for metric in self.metrics:
                 if metric == "Utility":
                     pass
+                if "Correlation" in metric:
+                    continue
                 for col in self.get_result_columns_for_metric(metric):
                     if col in saved_results.columns and pd.notna(saved_results.at[self.synthetic_name, col]):
                         print(f"Loading saved metric column: {col}")
@@ -223,7 +229,7 @@ class Evaluator:
             model_path=self.model_path,
             real_data_path=str(self.data_dir) + "/npy",
             num_samples=len(self.original_data),
-            batch_size=10000,
+            batch_size=56000,
             disbalance=config['sample'].get('disbalance', None),
             **config['diffusion_params'],
             model_type=config['model_type'],
@@ -440,6 +446,15 @@ class Evaluator:
         plt.title('Spearman Correlation Difference Heatmap')
         plt.savefig(diff_plot_path)
         plt.clf()
+
+        correlation_evaluator = CorrelationCalculator(original=original, synthetic=synthetic,
+                                                      original_name=self.dataset_name, synthetic_name=self.synthetic_name)
+        pearson_score = correlation_evaluator.evaluate(method=CorrelationMethod.PEARSON)
+        spearman_score = correlation_evaluator.evaluate(method=CorrelationMethod.SPEARMAN)
+        print(f"Correlation Pearson Score: {pearson_score}")
+        print(f"Correlation Spearman Score: {spearman_score}")
+        self.results.at[self.synthetic_name, "CorrelationPearson"] = pearson_score
+        self.results.at[self.synthetic_name, "CorrelationSpearman"] = spearman_score
 
     def calculate_pca(self, original: pd.DataFrame, synthetic: pd.DataFrame):
         output_dir = self.results_dir / 'PCA'

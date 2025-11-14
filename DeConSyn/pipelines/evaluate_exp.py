@@ -1,4 +1,5 @@
 import argparse
+import gc
 import re
 import sys
 from pathlib import Path
@@ -37,9 +38,11 @@ def eval_agents(config):
 
     for agent_dir in agent_dirs:
         agent_nr = agent_dir.name.split('_')[-1]
-        # if not agent_nr.startswith('00'):
+        #if not agent_nr.startswith('00'):
         #    continue
         run_dir_name = agent_dir.parent.name
+        if "5Agents" in run_dir_name or "6Agents" in run_dir_name:
+            continue
         model_type = run_dir_name.split('-')[-1]
         print("Evaluating agent:", agent_dir.name, "from run:", run_dir_name)
         synthetic_name = format_run_name(run_dir_name)
@@ -79,6 +82,13 @@ def eval_agents(config):
             print(f"\n========= SUMMARY for {agent_dir.name} ({model_name}) =========\n")
             print(results)
             i += config["iterations"]
+
+            del results
+            del evaluator
+            if 'torch' in globals():
+                import torch
+                torch.cuda.empty_cache()
+            gc.collect()
 
 def eval_baseline(config):
     original_data_path = config['original_data_path']

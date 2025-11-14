@@ -13,16 +13,16 @@ def get_runs_path(model_type="ctgan", dataset_name="adult"):
         return None
     return runs_path
 
-def get_runs_dir(model_type="ctgan"):
-    path = get_runs_path(model_type=model_type)
+def get_runs_dir(model_type="ctgan", dataset_name="adult"):
+    path = get_runs_path(model_type=model_type, dataset_name=dataset_name)
     if path is None:
         return None
     return os.listdir(path)
 
-def get_runs_results_df(it: int = None, model_type="ctgan"):
+def get_runs_results_df(it: int = None, model_type="ctgan", dataset_name="adult"):
     # Get results of each agent in each run
-    runs_path = get_runs_path(model_type=model_type)
-    runs = get_runs_dir(model_type)
+    runs_path = get_runs_path(model_type=model_type, dataset_name=dataset_name)
+    runs = get_runs_dir(model_type, dataset_name)
     if runs is None:
         return None
 
@@ -103,8 +103,8 @@ def safe_eval(x):
     return ast.literal_eval(x)
 
 
-def get_avg_agents_df(it: int = 500, model_type="ctgan"):
-    df = get_runs_results_df(it, model_type)
+def get_avg_agents_df(it: int = 500, model_type="ctgan", dataset_name="adult"):
+    df = get_runs_results_df(it, model_type, dataset_name)
     if df is None or df.empty:
         return None
     numeric_cols = df.select_dtypes(include='number').columns
@@ -126,6 +126,54 @@ def get_avg_runs_df(it: int = 500):
     avg_df = df.groupby(['run_base'])[numeric_cols].mean().reset_index()
     avg_df = avg_df.rename(columns={'run_base': 'run'})
     return avg_df
+
+def get_agents_synthetic(it: int = 300, model_type="ctgan", dataset_name="adult"):
+    runs_path = get_runs_path(model_type=model_type, dataset_name=dataset_name)
+    runs = get_runs_dir(model_type, dataset_name)
+    if runs is None:
+        return None
+
+    results = {}
+    for run in runs:
+        if not os.path.isdir(os.path.join(runs_path, run)):
+            continue
+        run_path = os.path.join(runs_path, run)
+        # Get all subruns
+        run_attempts = [d for d in os.listdir(run_path)]
+
+        for run_attempt in run_attempts:
+            run_attempt_path = os.path.join(run_path, run_attempt)
+            if not os.path.isdir(run_attempt_path):
+                continue
+
+            # Get all dirs that start with "agent_"
+            agents = [d for d in os.listdir(run_attempt_path) if d.startswith('agent_')]
+            run_attempt_df = {}
+            for agent in agents:
+                agent_path = os.path.join(run_attempt_path, agent)
+                results_file = f"results-iter-{it:05d}/synthetic.csv"
+                result_file = os.path.join(agent_path, results_file)
+                if os.path.exists(result_file):
+                    df = pd.read_csv(result_file)
+                    run_attempt_df[agent] = df
+            results[run_attempt] = run_attempt_df
+    return results
+
+def get_baseline_synthetic(model_type="ctgan", dataset_name="adult"):
+    runs_path = get_runs_path(model_type, dataset_name)
+    baseline_name = model_type + '_baseline'
+    baseline_path = os.path.join(runs_path, baseline_name, 'results', 'synthetic.csv')
+    if os.path.exists(baseline_path):
+        return pd.read_csv(baseline_path)
+    return None
+
+def get_original(dataset_name="adult"):
+    # Get repo root
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    data_path = os.path.join(repo_root, 'data', dataset_name, 'csv', 'train.csv')
+    if os.path.exists(data_path):
+        return pd.read_csv(data_path)
+    return None
 
 def get_baseline_df(model_type="ctgan"):
     runs_path = get_runs_path(model_type)

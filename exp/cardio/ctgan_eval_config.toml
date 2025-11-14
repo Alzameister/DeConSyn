@@ -8,17 +8,19 @@ categorical_columns = [
     "active",
     "cardio"
 ]
-baseline_dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/runs/ctgan/ctgan_baseline/"
-baseline_model_name = "ctgan_adult_baseline.pkl"
+baseline_dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/exp/cardio/runs/ctgan/ctgan_baseline"
+baseline_model_name = "ctgan_cardio_baseline.pt"
 
 dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/exp/cardio/runs"
-# metrics = ["DCR", "NNDR", "AdversarialAccuracy", "Disclosure", "JS", "KS", "BasicStats", 'PCA', 'Consensus', 'Correlation', 'Utility']
-#metrics = ["DCR", "NNDR", "Disclosure", "JS", "KS", "BasicStats", 'PCA', 'Correlation']
-metrics = ["DCR", "Consensus", "PCA"]
+metrics = ["DCR", "NNDR", "Disclosure", "JS", "KS", "BasicStats", 'PCA', 'Consensus', 'Correlation', 'Utility', 'Distribution']
+#metrics = ["DCR", "NNDR", "Disclosure", "JS", "KS", "BasicStats", 'PCA', 'Consensus', 'Correlation', 'Utility', 'Distribution']
+#metrics = ["DCR", "Consensus", "PCA"]
+#metrics = ["AdversarialAccuracy"]
+
 
 model_type = "ctgan"
 dataset_name = "cardio"
-keys = ["gender"]
+keys = ["gender", "age", "height", "weight"]
 target = 'cardio'
 seed = 42
 iterations = 300

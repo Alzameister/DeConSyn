@@ -3,7 +3,31 @@ real_data_path = "data/cardio/"
 num_numerical_features = 5
 device = "cpu"
 model_type = "mlp"
-seed = 0
+seed = 42
+log_level = "info"
+
+[deconsyn_params]
+dataset_name = "cardio"
+data_root = "../../data/cardio/"
+categorical_columns = [
+    "gender",
+    "cholesterol",
+    "gluc",
+    "smoke",
+    "alco",
+    "active"
+]
+target = "cardio"
+
+n = 10
+epochs = 30
+iterations = 1000
+topology = "ring"
+k = 4
+p = 0.1
+alpha = 1.0
+gen_model_type = "tabddpm"
+log_level = "info"
 
 [model_params]
 is_y_cond = true

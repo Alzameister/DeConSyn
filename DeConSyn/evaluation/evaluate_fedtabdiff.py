@@ -12,6 +12,8 @@ from FEST.privacy_utility_framework.privacy_utility_framework.metrics.privacy_me
     NNDRCalculator
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.basic_stats import \
     BasicStatsCalculator
+from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.correlation import \
+    CorrelationCalculator, CorrelationMethod
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.js_similarity import \
     JSCalculator
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.ks_test import \
@@ -20,7 +22,7 @@ from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_me
     WassersteinCalculator
 
 repo_root = get_repo_root()
-fedtabdiff_eval_dir = repo_root / 'exp' / 'adult' / 'runs' / 'FedTabDiff' / '4A'
+fedtabdiff_eval_dir = repo_root / 'exp' / 'adult' / 'runs' / 'FedTabDiff' / '10A'
 original_dir = repo_root / 'data' / 'adult' / 'csv'
 dataset_name = 'adult'
 synthetic_name = 'FedTabDiff'
@@ -72,6 +74,13 @@ ks_calculator = KSCalculator(original=original, synthetic=synthetic,
                                                    original_name=dataset_name, synthetic_name=synthetic_name)
 ks_results = ks_calculator.evaluate()
 results.at[synthetic_name, 'KS'] = ks_results
+
+correlation_calculator = CorrelationCalculator(original=original, synthetic=synthetic,
+                                               original_name=dataset_name, synthetic_name=synthetic_name)
+corr_results = correlation_calculator.evaluate(method=CorrelationMethod.PEARSON)
+results.at[synthetic_name, 'CorrelationPearson'] = corr_results
+corr_results = correlation_calculator.evaluate(method=CorrelationMethod.SPEARMAN)
+results.at[synthetic_name, 'CorrelationSpearman'] = corr_results
 
 categorical_columns = [
     "workclass",

@@ -254,7 +254,7 @@ def bar_plot_fedtabdiff(tabddpm_group_stats, fedtabdiff_dfs, out_path, metrics, 
 
 model_type = "tabddpm"
 it = 1000
-dataset_name = "cardio"
+dataset_name = "churn"
 tabddpm_dir = get_runs_path(model_type, dataset_name)
 ctgan_dir = get_runs_path("ctgan", dataset_name)
 tabddpm_results_dir = os.path.join(tabddpm_dir, "results")

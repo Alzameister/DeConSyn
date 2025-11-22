@@ -16,7 +16,7 @@ categorical_columns = [
 ]
 target = "Exited"
 
-n = 4
+n = 10
 epochs = 30
 iterations = 1000
 topology = "ring"

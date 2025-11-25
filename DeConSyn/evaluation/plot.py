@@ -175,8 +175,8 @@ def get_original(dataset_name="adult"):
         return pd.read_csv(data_path)
     return None
 
-def get_baseline_df(model_type="ctgan"):
-    runs_path = get_runs_path(model_type)
+def get_baseline_df(model_type="ctgan", dataset_name="adult"):
+    runs_path = get_runs_path(model_type, dataset_name)
     baseline_name = model_type + '_baseline'
     baseline_path = os.path.join(runs_path, baseline_name, 'results', 'results.csv')
     if os.path.exists(baseline_path):

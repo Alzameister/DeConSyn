@@ -52,17 +52,49 @@ def paired_t_ci(diff, alpha=0.05):
     t_stat, p_value = stats.ttest_1samp(diff, popmean=0)
     return mean, ci_lower, ci_upper, p_value
 
-def compare(model_type, it):
-    runs_dir = get_runs_path(model_type)
+def compare(model_type, it, dataset_name="adult"):
+    runs_dir = get_runs_path(model_type, dataset_name)
     runs_results_dir = os.path.join(runs_dir, "results")
     os.makedirs(runs_results_dir, exist_ok=True)
-    runs_df: pd.DataFrame = get_avg_agents_df(it, model_type)
+    runs_df: pd.DataFrame = get_avg_agents_df(it, model_type, dataset_name)
     runs_df.to_csv(os.path.join(runs_results_dir, f"{model_type}-{it}.csv"))
-    baseline_df = get_baseline_df(model_type)
+    baseline_df = get_baseline_df(model_type, dataset_name)
     numeric_cols = runs_df.select_dtypes(include='number').columns
     if runs_df is None or runs_df.empty:
         print("No data available for analysis.")
         raise SystemExit
+
+    runs_df_with_group = runs_df.copy()
+    runs_df_with_group['Group'] = runs_df_with_group['run'].apply(extract_group)
+
+    group_stats = []
+    for group, grp_df in runs_df_with_group.groupby('Group'):
+        for col in numeric_cols:
+            vals = grp_df[col].dropna().values
+            if vals.size == 0:
+                continue
+            mean = float(np.mean(vals))
+            std = vals.std()
+            median = float(np.median(vals))
+            q1 = float(np.percentile(vals, 25))
+            q3 = float(np.percentile(vals, 75))
+            iqr = q3 - q1
+            group_stats.append({
+                "Group": group,
+                "Metric": col,
+                "Mean": mean,
+                "Std": std,
+                "Median": median,
+                "Q1": q1,
+                "Q3": q3,
+                "IQR": iqr
+            })
+    if group_stats:
+        group_stats_df = pd.DataFrame(group_stats)
+        # Optional stable ordering similar to sample: sort by Group then Metric
+        group_stats_df = group_stats_df.sort_values(["Group", "Metric"]).reset_index(drop=True)
+        group_stats_df.to_csv(os.path.join(runs_results_dir, f"{model_type}-{it}-group-stats.csv"), index=True)
+    # --- end new section ---
 
     methods = runs_df[runs_df['run'] != 'baseline_ctgan']
     group_diffs = {}
@@ -102,7 +134,6 @@ def compare(model_type, it):
     for metric in df["Metric"].unique():
         if metric == 'AdversarialAccuracy':
             print(metric)
-        # subset = df[df["Metric"] == metric].sort_values("Mean_t", ascending=False)
         subset = df[df["Metric"] == metric].sort_values("Group", ascending=False)
         if subset["Mean_t"].notna().sum() == 0:
             continue
@@ -148,7 +179,6 @@ def compare(model_type, it):
         for idx, metric in enumerate(metrics):
             r, c = divmod(idx, cols)
             ax = axes[r][c]
-            # subset = df[df["Metric"] == metric].sort_values("Mean_t", ascending=False)
             subset = df[df["Metric"] == metric].sort_values("Group", ascending=False)
             subset = subset.dropna(subset=["Group", "Mean_t", "CI_Lower_t", "CI_Upper_t"])
             if subset.empty:
@@ -324,6 +354,7 @@ def compare_fedtabdiff(model_type, it):
             plt.tight_layout()
             plt.savefig(os.path.join(plots_dir, "ci_all_metrics.png"))
             plt.close(fig)
-
-compare("ctgan", 300)
-compare_fedtabdiff("tabddpm", 1000)
+dataset_name = "churn"
+compare("tabddpm", 1000, dataset_name=dataset_name)
+compare("ctgan", 300, dataset_name=dataset_name)
+#compare_fedtabdiff("tabddpm", 1000)

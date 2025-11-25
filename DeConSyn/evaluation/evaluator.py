@@ -118,7 +118,7 @@ class Evaluator:
         if not self.metrics == ['Consensus']:
             synthetic: pd.DataFrame = self.get_synthetic()
             if self.test_data is not None and 'Utility' in self.metrics:
-                self.calculate_utiltiy_metrics(synthetic, self.test_data)
+                self.calculate_utility_metrics(synthetic, self.test_data)
             if 'Distribution' in self.metrics:
                 self.plot_distributions(self.original_data, synthetic)
             self.calculate_privacy_metrics(self.original_data, synthetic)
@@ -216,11 +216,15 @@ class Evaluator:
                 if col not in self.categorical_columns and col != self.target:
                     synthetic[col] = synthetic[col].astype('float64')
             int_cols = self.original_data.select_dtypes(include=['int64']).columns
+            cat_cols = self.original_data.select_dtypes(include=['object', 'category']).columns
+            synthetic[cat_cols] = synthetic[cat_cols].astype(self.original_data[cat_cols].dtypes)
             self.original_data[int_cols] = self.original_data[int_cols].astype('float64')
+            self.test_data[int_cols] = self.test_data[int_cols].astype('float64')
             return synthetic
 
         int_cols = self.original_data.select_dtypes(include=['int64']).columns
         self.original_data[int_cols] = self.original_data[int_cols].astype('float64')
+        self.test_data[int_cols] = self.test_data[int_cols].astype('float64')
         config = load_config(get_config_dir() / self.dataset_name / "tabddpm_config.toml")
         set_global_seed(self.seed)
 
@@ -229,7 +233,7 @@ class Evaluator:
             model_path=self.model_path,
             real_data_path=str(self.data_dir) + "/npy",
             num_samples=len(self.original_data),
-            batch_size=56000,
+            batch_size=len(self.original_data),
             disbalance=config['sample'].get('disbalance', None),
             **config['diffusion_params'],
             model_type=config['model_type'],
@@ -261,7 +265,7 @@ class Evaluator:
         for col in self.original_data.columns:
             if col not in self.categorical_columns and col != self.target:
                 synthetic[col] = synthetic[col].astype('float64')
-
+        synthetic[self.target] = synthetic[self.target].astype(self.original_data[self.target].dtype)
         synthetic.to_csv(synthetic_path, index=False)
         return synthetic
 
@@ -382,7 +386,7 @@ class Evaluator:
                 value = self.results.at[self.synthetic_name, metric]
                 print(f"{metric}: {value}")
 
-    def calculate_utiltiy_metrics(self, synthetic: pd.DataFrame, test: pd.DataFrame):
+    def calculate_utility_metrics(self, synthetic: pd.DataFrame, test: pd.DataFrame):
         # If LogReg / CatBoost in saved results, skip
         if ("LogReg_Accuracy" in self.results.columns and pd.notna(self.results.at[self.synthetic_name, "LogReg_Accuracy"])) and \
            ("CatBoost_Accuracy" in self.results.columns and pd.notna(self.results.at[self.synthetic_name, "CatBoost_Accuracy"])):

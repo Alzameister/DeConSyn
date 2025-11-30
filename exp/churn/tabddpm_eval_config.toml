@@ -9,7 +9,7 @@ categorical_columns = [
 baseline_dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/exp/churn/runs/tabddpm/tabddpm_baseline/"
 baseline_model_name = "model.pt"
 
-dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/exp/churn/runs/tabddpm/6A-30E-1000R-Ring/"
+dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/exp/churn/runs/tabddpm/"
 
 metrics = ["DCR", "NNDR", "AdversarialAccuracy", "Disclosure", "JS", "KS", "BasicStats", 'PCA', 'Consensus', 'Correlation', 'Utility', 'Distribution']
 #metrics = ["DCR", "NNDR", "Disclosure", "JS", "KS", "BasicStats", 'PCA', 'Consensus', 'Correlation', 'Utility', 'Distribution']

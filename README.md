@@ -54,6 +54,12 @@ poetry run python DeConSyn/pipelines/evaluate_exp.py --config_path exp/adult/ctg
 
 ## Results
 
-The raw and intermediate results of the experiments can be found [here](#).
+The raw and intermediate results of the experiments can be found [here](https://1drv.ms/f/c/6b24e7b6af3b34c6/EuH8Ltl1aZZJt2xZvJKYkk8BxkfKrD41zyEgERNcxPouRw?e=76vsEL).
 
-TODO: OneDrive link to results
+Each dataset has its own folder containing the results and logs for the experiments conducted on that dataset.
+
+Each dataset contains a folder `aggregate_results`, which contains the results averaged over all agents of each individual run (`{model_type}-{iter}.csv`), aggregate metrics over all reruns of once configuration (`{model_type}-{iter}-group-stats.csv`), aggregate across all configurations (`{model_type}-{iter}-overall-metric-stats.csv`), aggregates across median configurations (`{model_type}-{iter}-agg-across-groups.csv`), and 95% confidence intervals for each configuration (`{model_type}-{iter}-ci.csv`).
+
+Each dataset folder also contains subfolders for logs and all individual runs of each configuration and for each model type.
+
+Inside the run folders, each individual run has its own folder containing the weights files, generated synthetic data, and results of the evaluation metrics for each agent participating in that run, which also includes some plots like PCA and distribution plots. Please note that these folders can be very (!) large, especially for diffusion-based models, as the weights have been saved periodically for each individual agent during training to track the convergence of the different agents. The run folders of each configuration have been compressed to save space, and it is suggested to only download and decompress the configurations that are of interest.

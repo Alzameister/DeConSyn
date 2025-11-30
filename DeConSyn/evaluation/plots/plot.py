@@ -5,7 +5,7 @@ import matplotlib.pyplot as plt
 
 def get_runs_path(model_type="ctgan", dataset_name="adult"):
     # Get repo root
-    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+    repo_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
     runs_path = os.path.join(repo_root, 'exp', dataset_name, 'runs')
     if model_type:
         runs_path = os.path.join(runs_path, model_type)

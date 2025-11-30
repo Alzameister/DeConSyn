@@ -3,7 +3,7 @@ import os
 
 import pandas as pd
 
-from DeConSyn.evaluation.plot import get_runs_path
+from DeConSyn.evaluation.plots.plot import get_runs_path
 import matplotlib.pyplot as plt
 import numpy as np
 import seaborn as sns
@@ -333,7 +333,7 @@ def bar_plot(tabddpm_group_stats, ctgan_group_stats, baseline_tabddpm, baseline_
 
 model_type = "tabddpm"
 it = 1000
-dataset_name = "cardio"
+dataset_name = "adult"
 tabddpm_dir = get_runs_path(model_type, dataset_name)
 ctgan_dir = get_runs_path("ctgan", dataset_name)
 tabddpm_results_dir = os.path.join(tabddpm_dir, "results")
@@ -453,4 +453,17 @@ bar_plot(
 )
 
 
+
+metrics = ["NNDR", "JS", "CatBoost_Accuracy"]
+out_path_total_statistical = os.path.join(tabddpm_dir, "plots", f"bar_plot_{dataset_name}_mixed.png")
+bar_plot(
+    best_tabddpm_df,
+    best_ctgan_df,
+    baseline_tabddpm_df,
+    baseline_ctgan_df,
+    best_fedtabdiff_group,
+    out_path_total_statistical,
+    metrics,
+    title=f"Comparison of metrics across models ({dataset_name})"
+)
 

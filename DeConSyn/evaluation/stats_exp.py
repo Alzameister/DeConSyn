@@ -5,9 +5,8 @@ import numpy as np
 import pandas as pd
 from matplotlib import pyplot as plt
 from scipy import stats
-from scipy.stats import permutation_test
 
-from DeConSyn.evaluation.plot import get_avg_agents_df, get_baseline_df, get_runs_path, get_fedtabdiff_df
+from DeConSyn.evaluation.plots.plot import get_avg_agents_df, get_baseline_df, get_runs_path, get_fedtabdiff_df
 
 METRICS = ['DCR', 'NNDR', 'AdversarialAccuracy', 'JS', 'KS', 'RepU', 'DiSCO', 'Mean', 'Median', 'Var', 'LogReg_Accuracy', 'LogReg_F1']
 METRICS_BETTER = {

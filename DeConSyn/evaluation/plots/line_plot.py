@@ -4,7 +4,7 @@ import pandas as pd
 import math
 import seaborn as sns
 import matplotlib.pyplot as plt
-from DeConSyn.evaluation.plot import get_runs_path
+from DeConSyn.evaluation.plots.plot import get_runs_path
 
 
 def line_plot_vs_topology_by_dataset(group_stats,
@@ -142,7 +142,7 @@ def line_plot_vs_topology_by_dataset(group_stats,
             labels,
             title="Dataset",
             loc="upper center",
-            bbox_to_anchor=(0.5, 0.90),
+            bbox_to_anchor=(0.5, 0.95),
             ncol=len(handles),
             frameon=True,
             fontsize=10,
@@ -285,7 +285,7 @@ def line_plot_vs_agents_by_dataset_all_topologies(group_stats,
             labels,
             title="Dataset",
             loc="upper center",
-            bbox_to_anchor=(0.5, 0.90),
+            bbox_to_anchor=(0.5, 0.95),
             ncol=len(handles),
             frameon=True,
             fontsize=10,
@@ -488,5 +488,45 @@ line_plot_vs_agents_by_dataset_all_topologies(
     metrics,
     os.path.join(get_runs_path("ctgan", "adult"), "ctgan-line-plot-vs-agents-utility.svg"),
     "DeConSyn-CTGAN – Effect of number of agents by dataset on utility metrics",
+    dataset_labels=dataset_labels,
+)
+
+metrics = [
+    ("NNDR", "Nearest Neighbor Distance Ratio"),
+    ("JS", "Jensen-Shannon Divergence"),
+    ("CatBoost_Accuracy", "CatBoost Accuracy"),
+]
+
+line_plot_vs_topology_by_dataset(
+    group_stats_tabddpm_all,
+    metrics,
+    os.path.join(get_runs_path("tabddpm", "adult"), "tabddpm-line-plot-vs-topology-mixed.svg"),
+    "DeConSyn-TabDDPM – Effect of topology by dataset on mixed metrics",
+    topology_order=topology_order,
+    dataset_labels=dataset_labels,
+)
+
+line_plot_vs_agents_by_dataset_all_topologies(
+    group_stats_tabddpm_all,
+    metrics,
+    os.path.join(get_runs_path("tabddpm", "adult"), "tabddpm-line-plot-vs-agents-mixed.svg"),
+    "DeConSyn-TabDDPM – Effect of number of agents by dataset on mixed metrics",
+    dataset_labels=dataset_labels,
+)
+
+line_plot_vs_topology_by_dataset(
+    group_stats_ctgan_all,
+    metrics,
+    os.path.join(get_runs_path("ctgan", "adult"), "ctgan-line-plot-vs-topology-mixed.svg"),
+    "DeConSyn-CTGAN – Effect of topology by dataset on mixed metrics",
+    topology_order=topology_order,
+    dataset_labels=dataset_labels,
+)
+
+line_plot_vs_agents_by_dataset_all_topologies(
+    group_stats_ctgan_all,
+    metrics,
+    os.path.join(get_runs_path("ctgan", "adult"), "ctgan-line-plot-vs-agents-mixed.svg"),
+    "DeConSyn-CTGAN – Effect of number of agents by dataset on mixed metrics",
     dataset_labels=dataset_labels,
 )

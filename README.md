@@ -60,6 +60,8 @@ Each dataset has its own folder containing the results and logs for the experime
 
 Each dataset contains a folder `aggregate_results`, which contains the results averaged over all agents of each individual run (`{model_type}-{iter}.csv`), aggregate metrics over all reruns of once configuration (`{model_type}-{iter}-group-stats.csv`), aggregate across all configurations (`{model_type}-{iter}-overall-metric-stats.csv`), aggregates across median configurations (`{model_type}-{iter}-agg-across-groups.csv`), and 95% confidence intervals for each configuration (`{model_type}-{iter}-ci.csv`).
 
-Each dataset folder also contains subfolders for logs and all individual runs of each configuration and for each model type.
+Each dataset folder also contains subfolders for logs and all individual runs of each configuration and for each model type, as well as the centralized baselines of each model type, and a subfolder for FedTabDiff baseline experiments.
 
 Inside the run folders, each individual run has its own folder containing the weights files, generated synthetic data, and results of the evaluation metrics for each agent participating in that run, which also includes some plots like PCA and distribution plots. Please note that these folders can be very (!) large, especially for diffusion-based models, as the weights have been saved periodically for each individual agent during training to track the convergence of the different agents. The run folders of each configuration have been compressed to save space, and it is suggested to only download and decompress the configurations that are of interest.
+
+The aggregated results over agent counts and topology can be found under `topology_agents_results` in the parent folder.

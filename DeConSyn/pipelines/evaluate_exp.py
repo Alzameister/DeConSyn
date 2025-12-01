@@ -13,9 +13,7 @@ def format_run_name(run_dir_name):
     agents = re.search(r'(\d+)Agents', run_dir_name)
     epochs = re.search(r'(\d+)Epochs', run_dir_name)
     iterations = re.search(r'(\d+)Iterations', run_dir_name)
-    # Get topology from 'run-20251103-120213-4Agents-1Epochs-300Iterations-ring-ctgan' --> 'ring', or 'smallworld' etc.
     topology = re.search(r'(ring|full|smallworld)', run_dir_name)
-    full = 'Full' if 'full' in run_dir_name.lower() else ''
     model_type = parts[-1].upper()
 
     formatted = f"{agents.group(1)}A {epochs.group(1)}E {iterations.group(1)}R {topology.group(1).capitalize()} {model_type}".strip()
@@ -37,9 +35,6 @@ def eval_agents(config):
     test_data = loader.get_test()
 
     for agent_dir in agent_dirs:
-        agent_nr = agent_dir.name.split('_')[-1]
-        #if not agent_nr.startswith('00'):
-        #    continue
         run_dir_name = agent_dir.parent.name
         if "5Agents" in run_dir_name or "6Agents" in run_dir_name:
             continue
@@ -50,7 +45,6 @@ def eval_agents(config):
         i = config["iterations"]
         while True:
             if model_type == "ctgan":
-                #model_name = f"iter-{i:05d}-model.pkl"
                 model_name = f"iter-{i:05d}-weights.pt"
             elif model_type == "tabddpm":
                 model_name = f"iter-{i:05d}-weights.pt"
@@ -100,7 +94,6 @@ def eval_baseline(config):
     baseline_dir = config['baseline_dir']
     metrics = config['metrics']
     if 'Consensus' in metrics:
-        # Remove consensus from metrics
         metrics.remove('Consensus')
 
 

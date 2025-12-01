@@ -111,7 +111,6 @@ class Evaluator:
     def evaluate(self) -> pd.DataFrame:
         self.get_calculated_metrics()
 
-        # If all metrics already covered, return results
         if self.all_metrics_covered():
             return self.results
 
@@ -170,7 +169,6 @@ class Evaluator:
                 if not all_dist_plot_path.exists() or not baseline_dist_plot_path.exists():
                     return False
             if metric == "Disclosure":
-                # Check both RepU and Disclosure columns
                 for col in ["RepU", "Disclosure"]:
                     if col not in self.results.columns or pd.isna(self.results.at[self.synthetic_name, col]):
                         return False
@@ -261,7 +259,6 @@ class Evaluator:
         for col in self.categorical_columns:
             synthetic[col] = synthetic[col].astype(self.original_data[col].dtype)
 
-        # Ensure numerical are float
         for col in self.original_data.columns:
             if col not in self.categorical_columns and col != self.target:
                 synthetic[col] = synthetic[col].astype('float64')
@@ -299,18 +296,14 @@ class Evaluator:
         model._generator.load_state_dict(model_weights['generator'])
         model._discriminator.load_state_dict(model_weights['discriminator'])
 
-        # model = load_model_pickle(Path(self.model_path))
-
         set_global_seed(self.seed)
         synthetic = model.sample(len(self.original_data))
 
         synthetic.to_csv(synthetic_path, index=False)
         return synthetic
-        # return model.sample(10_000)
 
     def calculate_privacy_metrics(self, original: pd.DataFrame, synthetic: pd.DataFrame):
         print("Calculating privacy metrics...")
-        # Only go through self.metrics that are in privacy_metrics
         for metric in self.metrics:
             if metric == "Disclosure":
                 if pd.isna(self.results.at[self.synthetic_name, metric]) or (pd.isna(self.results.at[self.synthetic_name, "RepU"])):
@@ -347,7 +340,6 @@ class Evaluator:
 
     def calculate_similarity_metrics(self, original: pd.DataFrame, synthetic: pd.DataFrame):
         print("Calculating similarity metrics...")
-        # Only go through self.metrics that are in similarity_metrics
         for metric in self.metrics:
             print(f"Calculating {metric}...")
             if metric == "BasicStats":
@@ -373,7 +365,6 @@ class Evaluator:
                 if metric == "WASSERSTEIN":
                     wasserstein_calculator = WassersteinCalculator(original=original, synthetic=synthetic,
                                                                    original_name=self.dataset_name, synthetic_name=self.synthetic_name)
-                    # metric=WassersteinMethod.SINKHORN, n_iterations=5, n_samples=500 maybe
                     wasserstein_value = wasserstein_calculator.evaluate()
                     self.results.at[self.synthetic_name, "WASSERSTEIN"] = wasserstein_value
                 if metric == "PCA":
@@ -387,16 +378,13 @@ class Evaluator:
                 print(f"{metric}: {value}")
 
     def calculate_utility_metrics(self, synthetic: pd.DataFrame, test: pd.DataFrame):
-        # If LogReg / CatBoost in saved results, skip
         if ("LogReg_Accuracy" in self.results.columns and pd.notna(self.results.at[self.synthetic_name, "LogReg_Accuracy"])) and \
            ("CatBoost_Accuracy" in self.results.columns and pd.notna(self.results.at[self.synthetic_name, "CatBoost_Accuracy"])):
             return
         categorical_columns = self.categorical_columns.copy()
         if self.target in categorical_columns:
             categorical_columns.remove(self.target)
-        # orig_log_reg_evaluator = LogisticRegressionEvaluator(original, test, self.target, categorical_columns, seed=self.seed)
         synth_log_reg_evaluator = LogisticRegressionEvaluator(synthetic, test, self.target, categorical_columns, seed=self.seed)
-        # orig_accuracy, orig_f1 = orig_log_reg_evaluator.evaluate()
         synth_accuracy, synth_f1 = synth_log_reg_evaluator.evaluate()
         self.results.at[self.synthetic_name, "LogReg_Accuracy"] = synth_accuracy
         self.results.at[self.synthetic_name, "LogReg_F1"] = synth_f1
@@ -422,7 +410,6 @@ class Evaluator:
         pearson_mean_diff = np.mean(pearson_diff)
         self.results.at[self.synthetic_name, "CorrelationPearson"] = pearson_mean_diff
 
-        # Save original, synthetic and heatmap of differences
         pearson_corr.to_csv(output_dir / 'original_pearson_corr.csv')
         synthetic_pearson_corr.to_csv(output_dir / 'synthetic_pearson_corr.csv')
         pearson_diff.to_csv(output_dir / 'pearson_correlation_difference.csv')
@@ -440,7 +427,6 @@ class Evaluator:
         spearman_mean_diff = np.mean(spearman_diff)
         self.results.at[self.synthetic_name, "CorrelationSpearman"] = spearman_mean_diff
 
-        # Save original, synthetic and heatmap of differences
         spearman_corr.to_csv(output_dir / 'original_spearman_corr.csv')
         synthetic_spearman_corr.to_csv(output_dir / 'synthetic_spearman_corr.csv')
         spearman_diff.to_csv(output_dir / 'spearman_correlation_difference.csv')
@@ -527,8 +513,6 @@ class Evaluator:
                 bins = int(np.sqrt(n))
                 sns.histplot(original[column], bins=bins, color='blue', label='Original', stat='probability', ax=ax, alpha=0.3)
                 sns.histplot(synthetic[column], bins=bins, color='orange', label=f'DeConSyn-{agent_count}-{topology}', stat='probability', ax=ax, alpha=0.3)
-                # sns.kdeplot(original[column], color='blue', ax=ax)
-                # sns.kdeplot(synthetic[column], color='orange', ax=ax)
                 ax.set_ylabel('Density')
             ax.set_title(f'Distribution of {column}')
             ax.set_xlabel(column)
@@ -623,10 +607,6 @@ class Evaluator:
                 sns.histplot(baseline_synthetic[column], bins=bins, color='blue', label='DeConSyn-1', stat='probability',
                              ax=ax, alpha=0.3)
                 sns.histplot(synthetic[column], bins=bins, color='orange', label=f'DeConSyn-{agent_count}-{topology}', stat='probability', ax=ax, alpha=0.3)
-
-                #sns.kdeplot(original[column], color='blue', ax=ax)
-                #sns.kdeplot(synthetic[column], color='orange', ax=ax)
-                #sns.kdeplot(baseline_synthetic[column], color='green', ax=ax)
                 ax.set_ylabel('Density')
             ax.set_title(f'Distribution of {column}')
             ax.set_xlabel(column)
@@ -640,7 +620,7 @@ class Evaluator:
         plt.clf()
 
     def _get_agent_count(self):
-        # Get agent count from synthetic name '4A 1E 300R Full CTGAN' --> '4A' = 4 agents
+        # Get agent count from synthetic name '4A 1E 300R Full CTGAN' --> 4 agents
         agent_count_str = self.synthetic_name.split(' ')[0]
         if agent_count_str.endswith('A'):
             return int(agent_count_str[:-1])

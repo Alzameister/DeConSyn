@@ -1,5 +1,4 @@
 import os
-import re
 
 import numpy as np
 import pandas as pd
@@ -7,20 +6,8 @@ from matplotlib import pyplot as plt
 from scipy import stats
 from scipy.stats import permutation_test
 
-from DeConSyn.evaluation.plots.plot import get_avg_agents_df, get_baseline_df, get_runs_path
-
-
-def extract_group(run_name):
-    # Extract everything after the first integer and dash
-    match = re.search(r'(\d+)Agents-(\d+)Epochs-(\d+)Iterations-(\w+)', run_name)
-    if match:
-        agents, epochs, iterations, topology = match.groups()
-        return f"{agents}A {epochs}E {iterations}R {topology}"
-    match = re.search(r'(\d+)Agents-(\d+)Epochs-(\d+)Rounds-(\w+)', run_name)
-    if match:
-        agents, epochs, iterations, topology = match.groups()
-        return f"{agents}A {epochs}E {iterations}R {topology}"
-    return run_name
+from DeConSyn.evaluation.get_stats import get_avg_agents_df, get_baseline_df, get_runs_path
+from DeConSyn.evaluation.stats_exp import extract_group
 
 
 def paired_t_ci(diff, alpha=0.05):
@@ -35,16 +22,13 @@ def paired_t_ci(diff, alpha=0.05):
     t_stat, p_value = stats.ttest_1samp(diff, popmean=0)
     return mean, ci_lower, ci_upper, p_value
 
-
 def permutation_ci(diff, n_resamples=10000, alpha=0.05, random_state=42):
     diff = np.asarray(diff, dtype=float)
     mean = np.mean(diff)
-    # Bootstrapped CI
     rng = np.random.default_rng(random_state)
     boot_means = [np.mean(rng.choice(diff, size=len(diff), replace=True)) for _ in range(n_resamples)]
     ci_lower = np.percentile(boot_means, 100 * alpha / 2)
     ci_upper = np.percentile(boot_means, 100 * (1 - alpha / 2))
-    # Permutation p-value
     result = permutation_test(
         (np.zeros_like(diff), diff),
         statistic=lambda x, y: np.mean(y - x),
@@ -88,8 +72,6 @@ def rank_models(df):
     return ranking
 
 
-#it = 1000
-#model_type = 'tabddpm'
 it = 300
 model_type = 'ctgan'
 runs_avg = get_avg_agents_df(it, model_type)
@@ -119,9 +101,7 @@ results = []
 for group_id, metrics in group_diffs.items():
     for col, diffs_list in metrics.items():
         all_diffs = np.concatenate(diffs_list)
-        # Paired t-test CI
         mean_t, lower_t, upper_t, p_value_t = paired_t_ci(all_diffs)
-        # Permutation CI
         results.append({
             "Group": group_id,
             "Metric": col,
@@ -137,7 +117,6 @@ os.makedirs(plots_dir, exist_ok=True)
 for metric in df["Metric"].unique():
     if metric == 'AdversarialAccuracy':
         print(metric)
-    #subset = df[df["Metric"] == metric].sort_values("Mean_t", ascending=False)
     subset = df[df["Metric"] == metric].sort_values("Group", ascending=False)
     if subset["Mean_t"].notna().sum() == 0:
         continue
@@ -145,7 +124,6 @@ for metric in df["Metric"].unique():
     subset["Group"] = subset["Group"].astype(str)
     colors_t = np.where(subset["p_value_t"] < 0.05, "red", "tab:blue")
     plt.figure(figsize=(14, 7))
-    # Paired t-test CI (gray)
     plt.errorbar(
         subset["Group"], subset["Mean_t"],
         yerr=[subset["Mean_t"] - subset["CI_Lower_t"], subset["CI_Upper_t"] - subset["Mean_t"]],
@@ -172,10 +150,7 @@ for metric in df["Metric"].unique():
     plt.savefig(f"{run_dir}/plots/ci_{metric}_t.png")
     plt.close()
 
-# python
-# Create one giant figure with all metrics as subplots
-# python
-# Create one giant figure with all metrics as subplots (no jitter for individual diffs)
+# Create plot with all metrics CI
 metrics = [m for m in df["Metric"].unique() if df[df["Metric"] == m]["Mean_t"].notna().sum() > 0]
 if metrics:
     import math
@@ -186,7 +161,6 @@ if metrics:
     for idx, metric in enumerate(metrics):
         r, c = divmod(idx, cols)
         ax = axes[r][c]
-        #subset = df[df["Metric"] == metric].sort_values("Mean_t", ascending=False)
         subset = df[df["Metric"] == metric].sort_values("Group", ascending=False)
         subset = subset.dropna(subset=["Group", "Mean_t", "CI_Lower_t", "CI_Upper_t"])
         if subset.empty:
@@ -195,7 +169,6 @@ if metrics:
         colors_t = np.where(subset["p_value_t"] < 0.05, "red", "tab:blue")
         groups = subset["Group"].astype(str).tolist()
         x_pos = np.arange(len(groups))
-        # Errorbars (t-test CI)
         y = subset["Mean_t"].values
         yerr = np.vstack([y - subset["CI_Lower_t"].values, subset["CI_Upper_t"].values - y])
         ax.errorbar(x_pos, y, yerr=yerr, fmt='o', capsize=5, markersize=6,
@@ -215,7 +188,7 @@ if metrics:
         ax.grid(True, linestyle='--', alpha=0.5)
         if idx == 0:
             ax.legend(fontsize=8)
-    # Hide any unused subplots
+
     for empty_idx in range(n, rows * cols):
         r, c = divmod(empty_idx, cols)
         axes[r][c].axis('off')

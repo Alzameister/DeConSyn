@@ -18,8 +18,6 @@ from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_me
     JSCalculator
 from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.ks_test import \
     KSCalculator
-from FEST.privacy_utility_framework.privacy_utility_framework.metrics.utility_metrics.statistical.wasserstein import \
-    WassersteinCalculator
 
 repo_root = get_repo_root()
 fedtabdiff_eval_dir = repo_root / 'exp' / 'adult' / 'runs' / 'FedTabDiff' / '10A'
@@ -32,7 +30,6 @@ target = 'income'
 synthetic = pd.read_csv(fedtabdiff_eval_dir / 'synthetic.csv')
 
 original = pd.read_csv(original_dir / 'train.csv')
-# convert original int64 to float64
 for col in original.select_dtypes(include=['int64']).columns:
     original[col] = original[col].astype('float64')
 

@@ -15,7 +15,6 @@ torch.serialization.add_safe_globals([CTGAN])
 def get_repo_root(start: str | Path | None = None) -> Path:
     """
     Return absolute path to repo root.
-    Order: ENV override -> walk up from 'start' (or CWD) -> CWD fallback.
     """
     env = os.getenv("DEFESYN_REPO_ROOT")
     if env:
@@ -30,7 +29,6 @@ def get_repo_root(start: str | Path | None = None) -> Path:
 def get_config_dir(repo_root: str | Path | None = None) -> Path:
     root = Path(repo_root) if repo_root else get_repo_root()
     return (root / "exp").resolve()
-    # return (root / "DeFeSyn" / "models" / "tab_ddpm" / "configs").resolve()
 
 def runs_dir(repo_root: str | Path | None = None) -> Path:
     root = Path(repo_root) if repo_root else get_repo_root()
@@ -77,9 +75,8 @@ def save_model_pickle(model, path: str | Path, *, keep_discriminator=True) -> No
     path = Path(path)
     path.parent.mkdir(parents=True, exist_ok=True)
 
-    m = copy.deepcopy(model)  # don't mutate the live object
+    m = copy.deepcopy(model)
 
-    # Put internal modules on CPU for portability
     try:
         m.set_device(torch.device("cpu"))
     except Exception:
@@ -92,7 +89,6 @@ def save_model_pickle(model, path: str | Path, *, keep_discriminator=True) -> No
         if keep_discriminator:
             m._discriminator.to("cpu").eval()
         else:
-            # Optional: drop it to shrink the file (not needed for sampling)
             m._discriminator = None
 
     torch.save(m, path)

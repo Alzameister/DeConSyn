@@ -1,7 +1,6 @@
 import pickle
 import threading
 from abc import ABC, abstractmethod
-from typing import Any
 
 import numpy as np
 import pandas as pd
@@ -58,15 +57,15 @@ class Model(ABC):
         pass
 
     @abstractmethod
-    def encode(self) -> dict[str, Any]:
+    def encode(self) -> dict:
         pass
 
     @abstractmethod
-    def decode(self, encoded: dict[str, Any]) -> dict[str, dict[str, torch.Tensor]]:
+    def decode(self, encoded: dict) -> dict[str, dict[str, torch.Tensor]]:
         pass
 
     @abstractmethod
-    def decode_and_load(self, package: dict[str, Any]) -> None:
+    def decode_and_load(self, package: dict) -> None:
         pass
 
     @abstractmethod
@@ -141,8 +140,8 @@ class CTGANModel(Model):
         """
         G = self.model._generator
         D = self.model._discriminator
-        gen_sd: dict[str, Any] = {}
-        dis_sd: dict[str, Any] = {}
+        gen_sd: dict = {}
+        dis_sd: dict = {}
         for k, v in G.state_dict().items():
             gen_sd[k] = v.detach().cpu().clone() if torch.is_tensor(v) else v
         for k, v in D.state_dict().items():
@@ -168,7 +167,6 @@ class CTGANModel(Model):
         loss_values = getattr(self.model, "loss_values", None)
         if loss_values is not None:
             lv_pd = pd.DataFrame(loss_values)
-            # Add to existing loss values
             self._loss_values = pd.concat([self._loss_values, lv_pd], ignore_index=True)
             self._loss_values["Epoch"] = self._loss_values.index + 1 * self.epochs
             print(self._loss_values)
@@ -218,7 +216,7 @@ class CTGANModel(Model):
 
             self._cpu_weights = snapshot_state_dict_pair(G, D)
 
-    def encode(self) -> dict[str, Any] | None:
+    def encode(self) -> bytes | None:
         """JSON-serializable dict with b64(gzip(torch.save(...))) + checksum, or None if not trained."""
         with self._weights_lock:
             if self._cpu_weights is None:
@@ -226,17 +224,16 @@ class CTGANModel(Model):
             return encode_state_dict_pair_blob(self._cpu_weights["generator"], self._cpu_weights["discriminator"],
                                                as_ascii=True)
 
-    def decode(self, package: str) -> dict[str, dict[str, torch.Tensor]]:
+    def decode(self, package: bytes) -> dict[str, dict[str, torch.Tensor]]:
         """Inverse of `encode`."""
         g, d = decode_state_dict_pair_blob(package)
         return {"generator": g, "discriminator": d}
 
-    def decode_and_load(self, package: str) -> None:
+    def decode_and_load(self, package: bytes) -> None:
         self.set_weights(self.decode(package))
 
     def get_loss_values(self):
         return self._loss_values
-        return getattr(self.model, "loss_values", None)
 
     def clear_loss_values(self):
         if hasattr(self.model, "loss_values"):
@@ -258,7 +255,6 @@ class CTGANModel(Model):
             return
 
 
-         # Fit CTGAN baseline
         self.epochs = 300
         self.model = CTGAN(epochs=self.epochs, verbose=True, cuda=self.use_cuda_flag)
         self.model.fit(
@@ -270,8 +266,6 @@ class CTGANModel(Model):
         )
         self._move_modules()
         self._refresh_cpu_snapshot()
-
-        # Save model under runs/ctgan_baseline
 
         root = get_repo_root()
         path = root / "exp" / "adult" / "runs" / "ctgan" / "ctgan_baseline"
@@ -296,8 +290,8 @@ class TabDDPMModel(Model):
             discrete_columns,
             real_data_path: str,
             cat_encoder: OrdinalEncoder,
-            num_encoder: Any,
-            y_encoder: Any,
+            num_encoder,
+            y_encoder,
             config: dict,
             verbose: bool = True,
             device: str = "cpu",
@@ -336,7 +330,6 @@ class TabDDPMModel(Model):
             y_encoder=self.y_encoder
         )
 
-        # Save the encoders
         num_encoder = self.dataset.num_transform
         cat_encoder = self.dataset.cat_transform
         y_encoder = self.dataset.y_transform
@@ -411,22 +404,18 @@ class TabDDPMModel(Model):
         self._refresh_cpu_snapshot()
 
     def postprocess_sample(self, X_gen, y_gen):
-        # Split into numerical and categorical features
         num_features = self.num_numerical_features
         X_num = X_gen[:, :num_features]
         X_cat = X_gen[:, num_features:]
 
-        # Inverse transform numerical features
         X_num_inv = self.dataset.num_transform.inverse_transform(X_num)
 
-        # Inverse transform categorical features
         X_cat_inv = self.dataset.cat_transform.inverse_transform(X_cat)
 
         y = y_gen['y']
         y_inv = self.dataset.y_transform.inverse_transform(y.reshape(-1, 1))
         y_inv = y_inv.squeeze(1)
 
-        # Combine back if needed
         X_final = np.hstack([X_num_inv, X_cat_inv])
         return X_final, y_inv
 
@@ -448,18 +437,17 @@ class TabDDPMModel(Model):
             self.model.load_state_dict(norm, strict=True)
             self._refresh_cpu_snapshot()
 
-    def encode(self) -> dict[str, Any]:
+    def encode(self) -> bytes | None:
         with self._weights_lock:
             if self._cpu_weights is None:
                 return None
-            # Only one state dict (no generator/discriminator split)
             return encode_state_dict_pair_blob(self._cpu_weights, {}, as_ascii=True)
 
-    def decode(self, encoded: dict[str, Any]) -> dict[str, dict[str, torch.Tensor]]:
+    def decode(self, encoded: bytes) -> dict[str, dict[str, torch.Tensor]]:
         g, _ = decode_state_dict_pair_blob(encoded)
         return g
 
-    def decode_and_load(self, package: dict[str, Any]) -> None:
+    def decode_and_load(self, package: bytes) -> None:
         self.set_weights(self.decode(package))
 
     def get_loss_values(self):

@@ -51,10 +51,8 @@ class CTGANModel:
             cuda=use_cuda_flag,
         )
 
-        # Optional warm-start state provided by caller
         self.weights: Dict[str, Dict[str, torch.Tensor]] = {}
 
-        # Concurrency: atomic CPU snapshots
         self._weights_lock = threading.RLock()
         self._cpu_weights: Optional[Dict[str, Dict[str, torch.Tensor]]] = None
 

@@ -1,9 +1,6 @@
-import os
 import re
 import sys
-from functools import lru_cache
 
-import torch
 import warnings
 from pathlib import Path
 
@@ -49,7 +46,7 @@ def init_logging(run_id: str | None = None,
         "- <level>{message}</level>"
     )
 
-    # 1) Console sink (stderr)
+    # Console sink (stderr)
     logger.add(
         sys.stderr,
         level=level,
@@ -78,7 +75,6 @@ def init_logging(run_id: str | None = None,
 
     warnings.filterwarnings("ignore", category=UserWarning)
 
-    # Set safe defaults so the console format doesn't KeyError before you bind per-agent.
     logger.configure(extra={"node_id": "--", "jid": ""})
 
     return run_id

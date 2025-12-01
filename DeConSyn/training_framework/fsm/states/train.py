@@ -88,17 +88,6 @@ class TrainingState(BaseState):
                 epochs=self._epochs,
                 verbose=True,
                 device=self.agent.device,
-                # embedding_dim=self.agent.embedding_dim,
-                # generator_dim=self.agent.generator_dim,
-                # discriminator_dim=self.agent.discriminator_dim,
-                # generator_lr=self.agent.generator_lr,
-                # generator_decay=self.agent.generator_decay,
-                # discriminator_lr=self.agent.discriminator_lr,
-                # discriminator_decay=self.agent.discriminator_decay,
-                # batch_size=self.agent.batch_size,
-                # discriminator_steps=self.agent.discriminator_steps,
-                # log_frequency=self.agent.log_frequency,
-                # pac=self.agent.pac
             )
         else:
             self.agent.log.error("No Model found for type '{}'", self.agent.model_type)
@@ -119,9 +108,7 @@ class TrainingState(BaseState):
         self.agent.loss_values = self.agent.model.get_loss_values()
         # Log loss to console
         if self.agent.loss_values is not None and not self.agent.loss_values.empty:
-            # Print all losses
             self.agent.log.info("Loss values: {}", self.agent.loss_values.tail(10).to_dict(orient="records"))
-            # Save to CSV
             run_dir = get_run_dir(
                 run_id=self.agent.run_id,
                 node_id=self.agent.id,
@@ -130,7 +117,6 @@ class TrainingState(BaseState):
             p = os.path.join(run_dir, "loss.csv")
             self.agent.loss_values.to_csv(p, index=False)
             self.agent.log.info("Saved loss history to {}", p)
-        # self.agent.model.clear_loss_values()
         self.agent.weights = self.agent.model.get_weights()
 
     async def _flush_pending_gossip_replies(self):

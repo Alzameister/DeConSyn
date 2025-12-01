@@ -49,9 +49,7 @@ class NodeConfig:
 @dataclass(frozen=True)
 class NodeData:
     """Data the agent needs at runtime."""
-    # Per-agent partition(s)
     part_train: pd.DataFrame
-    # Global context (For CTGAN Initialization/Evaluation)
     full_train: pd.DataFrame
     full_test: pd.DataFrame
 
@@ -70,14 +68,12 @@ class NodeAgent(Agent):
     ):
         super().__init__(cfg.jid, cfg.password)
 
-        # --- identity / config
         self.id: int = cfg.id
         self.run_id: str | None = cfg.run_id
         self.epochs: int = cfg.epochs
         self.max_iterations: int = cfg.max_iterations
         self.current_iteration: int = 0
 
-        # logging
         self.log = logger.bind(node_id=self.id, jid=self.jid)
         self.event = self.log.bind(stream="event")
 
@@ -101,25 +97,20 @@ class NodeAgent(Agent):
             self.device = cfg.device
         self.log.info("Using device: {}", self.device)
 
-        # --- topology
         self.neighbors: list[str] = list(neighbors or [])
         self.participants: list[str] = self.neighbors + [self.jid]
         self.active_neighbors: set[str] = set()
         self.log.info("Neighbors: {}", self.neighbors)
 
-        # --- data
         self.data: dict[str, pd.DataFrame] = {
             "train": data.part_train,
             "full_train": data.full_train,
             "full_test": data.full_test,
         }
 
-        # --- infra
         self.repo_dir: Path = repo_root or get_repo_root()
         self.consensus: Consensus = consensus or Consensus(alpha=cfg.alpha)
 
-        # queues for gossip + barrier tokens
-        # Dictionary of neighbor JID and request SPADE message
         self.pending_gossip: dict = {str(n): {} for n in self.neighbors}
         self.queue: asyncio.Queue = asyncio.Queue()
         self.push_queue: asyncio.Queue = asyncio.Queue()
@@ -127,7 +118,6 @@ class NodeAgent(Agent):
         self.pending_gossip_replies: list = []
         self.fsm_done: asyncio.Event = asyncio.Event()
 
-        # model + state (filled by FSM on first TRAIN)
         self.model: Model = None  # CTGANModel instance after first TRAIN
         self.weights: dict = {}  # latest local weights
         self.loss_values = pd.DataFrame(columns=["Epoch", "Generator Loss", "Discriminator Loss"])
@@ -138,10 +128,8 @@ class NodeAgent(Agent):
     async def setup(self):
         self.log.info("Setting up NodeAgent...")
 
-        # Advertise presence; PresenceBehavior will manage callbacks + subscriptions
         self.presence.set_available()
 
-        # 1) Presence (ACo-L): auto-subscribe + track active neighbors + update degree/epsilon
         self.add_behaviour(PresenceBehaviour(poll_secs=2.0))
         self.add_behaviour(
             ReceiveBehaviour(),
@@ -161,7 +149,6 @@ class NodeAgent(Agent):
         self.log.info("NodeAgent setup complete.")
 
     async def _setup_fsm(self):
-        # Declare states once, in a single, readable structure
         states = {
             START_STATE: StartState(),
             TRAINING_STATE: TrainingState(),
@@ -170,7 +157,6 @@ class NodeAgent(Agent):
             FINAL_STATE: FinalState(),
         }
 
-        # Declare all allowed transitions compactly
         transitions = [
             (START_STATE, TRAINING_STATE),
             (TRAINING_STATE, PULL_STATE),
@@ -184,6 +170,5 @@ class NodeAgent(Agent):
         self.add_behaviour(fsm)
 
 def make_rid(self) -> str:
-    # short, unique per sender
     return f"{self.jid.localpart}-{uuid.uuid4().hex[:12]}"
 

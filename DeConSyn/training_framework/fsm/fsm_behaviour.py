@@ -3,7 +3,6 @@ import ctypes
 import sys
 from dataclasses import dataclass
 import random
-from typing import Optional, Iterable
 
 import gc, torch
 from spade.behaviour import FSMBehaviour, State
@@ -35,9 +34,9 @@ BARRIER_TOTAL_TIMEOUT = 30.0  # seconds
 
 @dataclass
 class TrainSnapshot:
-    delta_l2: Optional[float] = None
-    theta_l2: Optional[float] = None
-    rel_delta: Optional[float] = None
+    delta_l2: float = None
+    theta_l2: float = None
+    rel_delta: float = None
     ms: float = 0.0
 
 # ----------------------------
@@ -65,7 +64,7 @@ def clear_memory():
 def discrete_cols_of(df):
     return [c for c in df.columns if getattr(df[c].dtype, "name", "") == "category"]
 
-def parse_float(s: Optional[str], default: float) -> float:
+def parse_float(s: str, default: float) -> float:
     try:
         return float(s) if s is not None else default
     except (TypeError, ValueError):
@@ -79,14 +78,14 @@ def debug_check_single_weight(agent, which="generator"):
     assert agent.model is not None, "Model not initialized yet."
     weights = agent.weights
 
-    # CTGAN: nested dict
+    # CTGAN
     if isinstance(weights, dict) and which in ("generator", "discriminator") and which in weights:
         cpu_block = weights[which]
         param_key = next(k for k, v in cpu_block.items() if torch.is_tensor(v))
         cpu_t = cpu_block[param_key]
         module = getattr(agent.model.model, f"_{which}")
         gpu_t = module.state_dict()[param_key]
-    # TabDDPM: flat dict
+    # TabDDPM
     elif isinstance(weights, dict):
         param_key = next(k for k, v in weights.items() if torch.is_tensor(v))
         cpu_t = weights[param_key]
@@ -106,11 +105,11 @@ def debug_check_single_weight(agent, which="generator"):
         agent.log.error(f"[WEIGHT-CHECK] MISMATCH in {which}.{param_key}")
         raise RuntimeError(f"Mismatch in {which}.{param_key}")
 
-def pick_random_peer(active: Iterable[str]) -> Optional[str]:
+def pick_random_peer(active) -> str | None:
     arr = list(active)
     return random.choice(arr) if arr else None
 
-def _bytes_len(s: Optional[str | bytes]) -> int:
+def _bytes_len(s) -> int:
     if s is None:
         return 0
     return len(s if isinstance(s, bytes) else s.encode("utf-8"))
@@ -127,11 +126,9 @@ class NodeFSMBehaviour(FSMBehaviour):
         if initial not in states:
             raise ValueError(f"Initial state '{initial}' not found in states: {list(states)}")
 
-        # Register states
         for name, state in states.items():
             self.add_state(name=name, state=state, initial=(name == initial))
 
-        # Register transitions
         for source, dest in transitions:
             if source not in states or dest not in states:
                 raise ValueError(f"Transition {source} -> {dest} references unknown state.")

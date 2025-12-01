@@ -19,8 +19,6 @@ from DeConSyn.training_framework.agent.node_agent import NodeAgent, NodeConfig, 
 from DeConSyn.utils.graph import Graph
 from DeConSyn.utils.seed import set_global_seed
 
-ADULT_PATH = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/05_Data/adult"
-ADULT_MANIFEST = "manifest.yaml"
 SEED = 42
 set_global_seed(SEED)
 
@@ -77,7 +75,6 @@ async def run(
     model_type: str = "tabddpm",
     config_path: str | None = None
 ):
-    # logging + seed
     run_id = init_logging(level=log_level.upper(),
                           agents=nr_agents,
                           epochs=epochs,
@@ -91,12 +88,9 @@ async def run(
 
     # prepare data
     csv_path = data_root + "/csv"
-    #transformer = DataTransformer(data_root, ADULT_TARGET, ADULT_CATEGORICAL_COLUMNS)
     #transformer = DataTransformer(data_root, CARDIO_TARGET, CARDIO_CATEGORICAL_COLUMNS)
     #transformer.save_csv(Path(csv_path))
     npy_path = data_root + "/npy"
-
-    #logger.info(f"CSV saved to {csv_path}")
 
     #loader = DatasetLoader(data_root, ADULT_CATEGORICAL_COLUMNS, ADULT_TARGET)
     loader = DatasetLoader(data_root, CARDIO_CATEGORICAL_COLUMNS, CARDIO_TARGET)
@@ -118,8 +112,6 @@ async def run(
             part,
             Path(npy_path) / "splits" / str(nr_agents),
             i,
-            #ADULT_CATEGORICAL_COLUMNS,
-            #ADULT_TARGET
             CARDIO_CATEGORICAL_COLUMNS,
             CARDIO_TARGET
         )
@@ -127,8 +119,6 @@ async def run(
             test_splits[i],
             Path(npy_path) / "splits" / str(nr_agents),
             i,
-            #ADULT_CATEGORICAL_COLUMNS,
-            #ADULT_TARGET
             CARDIO_CATEGORICAL_COLUMNS,
             CARDIO_TARGET
         )
@@ -235,7 +225,7 @@ def build_parser() -> argparse.ArgumentParser:
     def add_shared(sp):
         sp.add_argument("--agents", type=int, default=4, help="Number of agents (default: 4)")
         sp.add_argument("--alpha", type=float, default=1.0, help="ACo-L alpha (default: 1.0)")
-        sp.add_argument("--data-root", default=ADULT_PATH, help="Dataset root directory")
+        sp.add_argument("--data-root", help="Dataset root directory")
         sp.add_argument("--topology", choices=["ring", "full", "small-world"], default="ring", help="Neighbor topology")
         sp.add_argument("--k", type=int, default=4, help="Number of nearest neighbors for small-world (default: 4)")
         sp.add_argument("--p", type=float, default=0.1, help="Rewiring probability for small-world (default: 0.1)")

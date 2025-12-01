@@ -81,14 +81,6 @@ class BaseState(State, ABC):
             ext="pkl",
             repo_root=self.agent.repo_dir,
         )
-        pt = make_path(
-            run_id=self.agent.run_id,
-            node_id=self.agent.id,
-            iteration=it,
-            phase="model",
-            ext="pt",
-            repo_root=self.agent.repo_dir
-        )
         model = self.agent.model
         if hasattr(model, "diffusion"):
             save_model_pickle(model=model.diffusion, path=p)

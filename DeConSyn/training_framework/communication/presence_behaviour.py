@@ -33,14 +33,12 @@ class PresenceBehaviour(CyclicBehaviour):
         except Exception as e:
             a.log.warning("PresenceBehavior: set_available() failed: {}", e)
 
-        # wire presence callbacks (instant updates)
         a.presence.on_available = lambda jid, *args, **kwargs: asyncio.create_task(self._on_available(jid))
         a.presence.on_unavailable = lambda jid, *args, **kwargs: asyncio.create_task(self._on_unavailable(jid))
         a.presence.on_subscribe = lambda jid, *args, **kwargs: asyncio.create_task(self._on_subscribe(jid))
         a.presence.on_subscribed = lambda jid, *args, **kwargs: asyncio.create_task(self._on_subscribed(jid))
         a.presence.on_unsubscribed = lambda jid, *args, **kwargs: asyncio.create_task(self._on_unsubscribed(jid))
 
-        # initialize active set from current roster
         await self._recompute_from_roster(initial=True)
 
     async def run(self):
@@ -103,17 +101,11 @@ class PresenceBehaviour(CyclicBehaviour):
         neighbor_set = set(getattr(a, "neighbors", []))
         active &= neighbor_set
 
-        # MERGE (do not drop previously active unless explicitly unavailable)
         merged = set(a.active_neighbors) | active
 
         if merged != getattr(self, "_last_active", set()) or initial:
             self._last_active = set(merged)
             a.active_neighbors = merged
-            # try:
-            #     a.consensus.set_degree(len(merged))
-            #     eps = float(a.consensus.get_eps())
-            # except Exception:
-            #     eps = None
             eps = a.consensus.get_eps()
             a.log.info(
                 "Presence: active_neighbors={} | degree={} | eps_i={}",
@@ -125,12 +117,6 @@ class PresenceBehaviour(CyclicBehaviour):
         a = self.agent
         deg = len(a.active_neighbors)
 
-        # Update consensus degree
-        # try:
-        #     a.consensus.set_degree(deg)
-        #     eps = float(a.consensus.get_eps())
-        # except Exception:
-        #     eps = None
         eps = a.consensus.get_eps()
         a.log.info(
             "Presence: active_neighbors={} | degree={} | eps_i={}",

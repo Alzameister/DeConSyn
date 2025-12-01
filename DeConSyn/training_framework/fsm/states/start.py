@@ -57,7 +57,6 @@ class StartState(BaseState):
             self.log.info("START: barrier complete")
             self.agent.consensus.set_degree(len(neighbors))
 
-        # Free up memory
         gc.collect()
 
         self.set_next_state(TRAINING_STATE)

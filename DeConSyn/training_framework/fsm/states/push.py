@@ -113,7 +113,6 @@ class PushState(BaseState):
         with contextlib.suppress(Exception):
             waiter.kill()
 
-        # del waiter, fut, reply, received
         gc.collect()
         clear_memory()
         self.report("PUSH")

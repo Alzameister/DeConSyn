@@ -22,8 +22,10 @@ class Consensus:
         self.degree = 0
         self.eps = 1.0
         self.prev_eps = 1.0
-        self.x0 = None                       # snapshot of x_i at window start
-        self.snapshot_on_device = snapshot_on_device  # set False to keep x0 on CPU
+        # snapshot of x_i at window start
+        self.x0 = None
+        # set False to keep x0 on CPU
+        self.snapshot_on_device = snapshot_on_device
 
     def set_degree(self, degree: int):
         if self.degree != 0:
@@ -33,7 +35,7 @@ class Consensus:
         self.prev_eps = self.eps
 
     def _clone_like(self, x):
-        # Snapshot helper: clone/detach torch tensors; copy numpy arrays
+        """Snapshot helper: clone/detach torch tensors; copy numpy arrays"""
         if _is_tensor(x):
             y = x.detach().clone()
             if not self.snapshot_on_device:
@@ -45,19 +47,19 @@ class Consensus:
             raise TypeError(f"Unsupported leaf type: {type(x)}")
 
     def _snapshot(self, x_dict):
-        # Shallow structure copy + per-leaf clone/copy
         if not isinstance(x_dict, dict):
             raise TypeError(f"Expected dict, got {type(x_dict)}")
-        if x_dict and all(isinstance(v, dict) for v in x_dict.values()): # CTGAN
+        # CTGAN
+        if x_dict and all(isinstance(v, dict) for v in x_dict.values()):
             return {
                 k: {p: self._clone_like(vv) for p, vv in v.items()}
                 for k, v in x_dict.items()
             }
-        else: # Tabddpm
+        # TabDDPM
+        else:
             return {k: self._clone_like(v) for k, v in x_dict.items()}
 
     def start_consensus_window(self, x_i: dict):
-        # Take a value snapshot for correction term; avoid deepcopy on GPU tensors
         self.x0 = self._snapshot(x_i)
         self.prev_eps = self.eps
 
@@ -69,13 +71,13 @@ class Consensus:
         if not isinstance(A, dict) or not isinstance(B, dict) or not isinstance(A0, dict):
             raise TypeError("All arguments must be dicts")
 
-        # Nested dict (CTGAN): recurse per block
+        # CTGAN
         if A and all(isinstance(v, dict) for v in A.values()):
             for k in A:
                 self._blend_inplace(A[k], B[k], A0[k], eps, corr)
             return
 
-        # Flat dict (TabDDPM): blend tensors/arrays
+        # TabDDPM
         if _HAS_TORCH:
             torch_no_grad = torch.no_grad
         else:

@@ -59,12 +59,10 @@ class DatasetLoader:
 
         self._load_npy()
 
-        # Convert int to Int
         for key in self._dataframes:
             int_cols = self._dataframes[key].select_dtypes(include=["int"]).columns
             self._dataframes[key][int_cols] = self._dataframes[key][int_cols].astype("Int64")
 
-        # Convert specified columns to categorical
         self.categorical_cols = categorical_cols
         if self.categorical_cols:
             for col in self.categorical_cols:

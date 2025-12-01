@@ -12,7 +12,6 @@ class DataTransformer:
         print("Data directory:", self.data_dir)
         self.columns = self._get_columns()
         self.target = target
-        # Remove target from cat_cols if present
         self.cat_cols = cat_cols if target not in cat_cols else [col for col in cat_cols if col != target]
         self.num_cols = [col for col in self.columns if col not in self.cat_cols + [self.target]]
         self.train_file = self._find_file(['train.csv', '*.train'])

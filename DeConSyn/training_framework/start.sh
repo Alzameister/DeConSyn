@@ -19,6 +19,10 @@ fi
 # ----------------------------
 PROJECT_ROOT="/home/ubuntu/DeConSyn"
 PYTHON_EXEC="/home/ubuntu/.cache/pypoetry/virtualenvs/defesyn-diyj7ln9-py3.11/bin/python"
+SCRIPT="$PROJECT_ROOT/DeConSyn/training_framework/start.py"
+
+RUNS_DIR="$PROJECT_ROOT/runs"
+LOGS_DIR="$PROJECT_ROOT/logs"
 
 DATA_ROOT="$HOME/DeConSyn/data/cardio"
 SEED=42
@@ -46,6 +50,48 @@ if [[ ${#EPOCHS_LIST[@]} -ne ${#ITERATIONS_LIST[@]} ]]; then
   exit 1
 fi
 
+# ----------------------------
+# Helpers
+# ----------------------------
+ensure_remote_dirs() {
+  ssh $SSH_OPTS "$LAPTOP_USER@$LAPTOP_HOST" \
+    "mkdir -p \"$DEST_RUNS\" \"$DEST_LOGS\""
+}
+
+rsync_with_retries() {
+  # $1=src_dir  $2=dest_dir
+  local src="$1" dest="$2"
+  local tries=5 delay=5
+
+  if [[ ! -d "$src" ]]; then
+    echo ">>> WARN: $src does not exist, skipping."
+    return 0
+  fi
+
+  # Ensure destination exists on laptop
+  ssh $SSH_OPTS "$LAPTOP_USER@$LAPTOP_HOST" "mkdir -p \"$dest\""
+
+  for ((i=1;i<=tries;i++)); do
+    # NOTE: fixed the stray `" "` here; source ends with a single trailing slash
+    rsync $RSYNC_FLAGS -e "ssh $SSH_OPTS" \
+      "$src/" "$LAPTOP_USER@$LAPTOP_HOST:$dest/" && return 0
+    echo ">>> rsync $src -> $dest attempt $i failed; retrying in ${delay}s..."
+    sleep "$delay"; delay=$((delay*2))
+  done
+
+  echo ">>> ERROR: rsync $src -> $dest failed after $tries attempts."
+  return 1
+}
+
+sync_runs_and_logs() {
+  ensure_remote_dirs
+  rsync_with_retries "$RUNS_DIR" "$DEST_RUNS" || return 1
+  rsync_with_retries "$LOGS_DIR" "$DEST_LOGS" || return 1
+}
+
+delete_runs_and_logs() {
+  rm -rf "${RUNS_DIR:?}"/* "${LOGS_DIR:?}"/*
+}
 
 # ----------------------------
 # Runner

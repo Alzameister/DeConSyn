@@ -24,7 +24,7 @@ SCRIPT="$PROJECT_ROOT/DeConSyn/training_framework/start.py"
 RUNS_DIR="$PROJECT_ROOT/runs"
 LOGS_DIR="$PROJECT_ROOT/logs"
 
-DATA_ROOT="$HOME/DeConSyn/data/cardio"
+DATA_ROOT="$PROJECT_ROOT/data/cardio"
 SEED=42
 N_JOBS=1
 LOG_LEVEL="INFO"
@@ -33,7 +33,7 @@ SLEEP_SECS=10
 ALPHA=1.0
 K=4
 P=0.1
-CONFIG_PATH="$HOME/DeConSyn/exp/cardio/tabddpm_config.toml"
+CONFIG_PATH="$PROJECT_ROOT/exp/cardio/tabddpm_config.toml"
 
 # ----------------------------
 # Inputs

@@ -1,0 +1,14 @@
+{
+  "task_type": "binclass",
+  "n_classes": 2,
+  "num_features": 5,
+  "cat_features": [
+    "gender",
+    "cholesterol",
+    "gluc",
+    "smoke",
+    "alco",
+    "active"
+  ],
+  "target": "cardio"
+}

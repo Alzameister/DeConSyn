@@ -72,7 +72,6 @@ rsync_with_retries() {
   ssh $SSH_OPTS "$LAPTOP_USER@$LAPTOP_HOST" "mkdir -p \"$dest\""
 
   for ((i=1;i<=tries;i++)); do
-    # NOTE: fixed the stray `" "` here; source ends with a single trailing slash
     rsync $RSYNC_FLAGS -e "ssh $SSH_OPTS" \
       "$src/" "$LAPTOP_USER@$LAPTOP_HOST:$dest/" && return 0
     echo ">>> rsync $src -> $dest attempt $i failed; retrying in ${delay}s..."

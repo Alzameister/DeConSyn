@@ -36,7 +36,7 @@ The following scripts are available to run and evaluate the experiments:
 
 ### Configurations
 
-Configuration files for different datasets are located in the `exp/` directory. The configuration file for training a model specifies the parameters for the experiments, including dataset paths and details abd model hyperparameters for DeConSyn and the underlying synthetic data generator. An example can be found in `exp/adult/ctgan_config.yaml`.  The configuration file for evaluation specifies the parameters for evaluating the trained models, including paths to the trained models and evaluation metrics. An example can be found in `exp/adult/ctgan_eval_config.yaml`. The schema of the configuration files is described in detail in [CONFIG_DESCRIPTION.md](CONFIG_DESCRIPTION.md).
+Configuration files for different datasets are located in the `exp/` directory. The configuration file for training a model specifies the parameters for the experiments, including dataset paths and details of model hyperparameters for DeConSyn and the underlying synthetic data generator. An example can be found in `exp/adult/ctgan_config.yaml`.  The configuration file for evaluation specifies the parameters for evaluating the trained models, including paths to the trained models and evaluation metrics. An example can be found in `exp/adult/ctgan_eval_config.yaml`. The schema of the configuration files is described in detail in [CONFIG_DESCRIPTION.md](CONFIG_DESCRIPTION.md).
 
 ### Examples
 

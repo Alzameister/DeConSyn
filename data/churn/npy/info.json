@@ -1,0 +1,12 @@
+{
+  "task_type": "binclass",
+  "n_classes": 2,
+  "num_features": 6,
+  "cat_features": [
+    "Geography",
+    "Gender",
+    "HasCrCard",
+    "IsActiveMember"
+],
+  "target": "Exited"
+}

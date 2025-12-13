@@ -12,11 +12,7 @@ baseline_dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/exp/car
 baseline_model_name = "ctgan_cardio_baseline.pt"
 
 dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/exp/cardio/runs"
-metrics = ["DCR", "NNDR", "Disclosure", "JS", "KS", "BasicStats", 'PCA', 'Consensus', 'Correlation', 'Utility', 'Distribution']
-#metrics = ["DCR", "NNDR", "Disclosure", "JS", "KS", "BasicStats", 'PCA', 'Consensus', 'Correlation', 'Utility', 'Distribution']
-#metrics = ["DCR", "Consensus", "PCA"]
-#metrics = ["AdversarialAccuracy"]
-
+metrics = ["DCR", "NNDR", "AdversarialAccuracy", "Disclosure", "JS", "KS", "BasicStats", 'PCA', 'Consensus', 'Correlation', 'Utility', 'Distribution']
 
 model_type = "ctgan"
 dataset_name = "cardio"

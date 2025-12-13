@@ -1,26 +1,20 @@
-original_data_path = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/data/adult"
+original_data_path = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/data/churn"
 categorical_columns = [
-    "workclass",
-    "education",
-    "marital-status",
-    "occupation",
-    "relationship",
-    "race",
-    "sex",
-    "native-country",
-    'income'
+    'Geography',
+    'Gender',
+    'HasCrCard',
+    'IsActiveMember'
 ]
-baseline_dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/exp/adult/runs/ctgan/ctgan_baseline/"
-baseline_model_name = "ctgan_adult_baseline.pt"
 
-dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/exp/adult/runs/ctgan/"
+baseline_dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/exp/churn/runs/ctgan/ctgan_baseline/"
+baseline_model_name = "ctgan_churn_baseline.pt"
+
+dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/exp/churn/runs/ctgan/"
 metrics = ["DCR", "NNDR", "AdversarialAccuracy", "Disclosure", "JS", "KS", "BasicStats", 'PCA', 'Consensus', 'Correlation', 'Utility', 'Distribution']
-#metrics = ["DCR", "NNDR", "Disclosure", "JS", "KS", "BasicStats", 'PCA', 'Consensus', 'Correlation', 'Utility', 'Distribution']
-#metrics = ["Distribution"]
 
 model_type = "ctgan"
-dataset_name = "adult"
-keys = ["age", "education", "marital-status", "occupation"]
-target = 'income'
+dataset_name = "churn"
+keys = ["Geography", "Gender", "Age"]
+target = 'Exited'
 seed = 42
 iterations = 300

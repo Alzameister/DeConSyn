@@ -279,6 +279,8 @@ class Evaluator:
                 if col not in self.categorical_columns and col != self.target:
                     synthetic[col] = synthetic[col].astype('float64')
             int_cols = self.original_data.select_dtypes(include=['int64']).columns
+            cat_cols = self.original_data.select_dtypes(include=['object', 'category']).columns
+            synthetic[cat_cols] = synthetic[cat_cols].astype(self.original_data[cat_cols].dtypes)
             self.original_data[int_cols] = self.original_data[int_cols].astype('float64')
             return synthetic
 

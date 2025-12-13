@@ -40,16 +40,16 @@ Configuration files for different datasets are located in the `exp/` directory. 
 
 ### Examples
 
-To run an experiment, call the following command:
+To run an experiment, call the following command from the repo root:
 
 ```bash
-poetry run python DeConSyn/pipelines/run_exp.py --config_path exp/adult/ctgan_config.yaml
+poetry run python -m DeConSyn.pipelines.run_exp --config exp/adult/ctgan_config.toml
 ```
 
-To evaluate a trained model, call the following command:
+To evaluate a trained model, call the following command from the repo root:
 
 ```bash
-poetry run python DeConSyn/pipelines/evaluate_exp.py --config_path exp/adult/ctgan_eval_config.yaml
+poetry run python -m DeConSyn.pipelines.evaluate_exp --config exp/adult/ctgan_eval_config.toml
 ```
 
 ## Results

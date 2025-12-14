@@ -5,7 +5,7 @@ Protecting the privacy of data by allowing decentralized training of synthetic d
 ## Setup
 
 1. Install and configure an XMPP server (e.g., [openfire](https://www.igniterealtime.org/projects/openfire/))
-2. Install [poetry](https://python-poetry.org/)
+2. Install [poetry](https://python-poetry.org/) (version 2.2.1)
 3. Run the following command:
 
 ```bash

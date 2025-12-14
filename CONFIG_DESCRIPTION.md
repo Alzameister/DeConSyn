@@ -9,7 +9,7 @@ Main part:
 
 DeConSyn parameters (`deconsyn_params`):
 - `dataset_name`: A string indicating the name of the dataset being used (e.g., "adult", "cardio", "churn").
-- `data_root`: A string specifying the path to the root directory where the dataset is located. uses relative paths from the `DeConSyn/exp/` directory.'
+- `data_root`: A string specifying the path to the root directory where the dataset is located. Uses relative paths.
 - `categorical_columns`: A list of strings representing the names of categorical columns in the dataset.
 - `target`: A string representing the target column name in the dataset.
 - `n`: An integer specifying the number of agents.

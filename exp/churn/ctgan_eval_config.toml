@@ -3,7 +3,8 @@ categorical_columns = [
     'Geography',
     'Gender',
     'HasCrCard',
-    'IsActiveMember'
+    'IsActiveMember',
+    'Exited'
 ]
 
 baseline_dir = "C:/Users/trist/OneDrive/Dokumente/UZH/BA/06_Code/DeFeSyn/exp/churn/runs/ctgan/ctgan_baseline/"

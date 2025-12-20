@@ -68,4 +68,21 @@ This is a description of the configuration file used for evaluating trained mode
 - `seed`: An integer value used to set the random seed for reproducibility.
 - `iterations`: An integer specifying the FSM round you want to evaluate.
 
+### Metrics
+
+The following evaluation metrics are supported (for more details on how the metrics work, take a look at the FEST [paper](https://arxiv.org/abs/2508.16254)):
+
+- `DCR`: Distance to Closest Record
+- `NNDR`: Nearest Neighbor Distance Ratio
+- `AdversarialAccuracy`: Nearest Neighbor Adversarial Accuracy
+- `Disclosure`: Disclosure metric based on exact matches and also calculates RepU (Replicated Uniques).
+- `JS`: Jensen-Shannon Divergence between the real and synthetic data distributions.
+- `KS`: Kolmogorov-Smirnov statistic between the real and synthetic data distributions.
+- `BasicStats`: Basic statistics comparison (mean, median, variance) between real and synthetic data.
+- `Correlation`: Pearson and Spearman correlation comparison between real and synthetic data.
+- `Utility`: Utility metric based on a classification task using the target variable. Creates a logistic regression and CatBoost model trained on synthetic data and evaluated on real data.
+- `Distribution`: Compares the distributions of each feature between real and synthetic data, and synthetic data vs. baseline model.
+- `PCA`: Principal Component Analysis comparison between real and synthetic data.
+- `Consensus`: Consensus metric to evaluate the quality of the consensus learning process, such as a plot of the mean weights of each layer of the model of each agent over FSM rounds.
+
 An example configuration file can be found in `exp/adult/ctgan_eval_config.yaml`.

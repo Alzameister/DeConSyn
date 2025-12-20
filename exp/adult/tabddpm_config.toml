@@ -22,7 +22,7 @@ target = "income"
 
 n = 4
 epochs = 30
-iterations = 300
+iterations = 1000
 topology = "ring"
 k = 4
 p = 0.1
@@ -47,7 +47,7 @@ num_timesteps = 1000 #100
 gaussian_loss_type = "mse"
 
 [train.main]
-steps = 1
+steps = 30
 lr = 0.001809824563637657
 weight_decay = 0.0
 batch_size = 256 #4096 #256

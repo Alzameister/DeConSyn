@@ -23,4 +23,4 @@ dataset_name = "adult"
 keys = ["age", "education", "marital-status", "occupation"]
 target = 'income'
 seed = 42
-iterations = 100
+iterations = 1000

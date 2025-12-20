@@ -55,11 +55,11 @@ While evaluation parameters are needed for the TabDDPM package to work, they are
 ## Evaluation Configuration
 
 This is a description of the configuration file used for evaluating trained models in DeConSyn. The configuration contains the following parameters:
-- `original_data_path`: A string specifying the path to the original data file used for evaluation.
+- `original_data_path`: A string specifying the path to the original data file used for evaluation. Uses absolute paths.
 - `categorical_columns`: A list of strings representing the names of categorical columns in the dataset.
-- `baseline_dir`: A string specifying the path to the directory containing baseline results for comparison.
+- `baseline_dir`: A string specifying the path to the directory containing baseline results for comparison. Uses absolute paths.
 - `baseline_model_name`: A string indicating the file name of the baseline model used for comparison (e.g., "ctgan.pt", "tabddpm.pt").
-- `dir`: A string specifying the path to the directory containing the trained models to be evaluated. All models in this directory will be evaluated.
+- `dir`: A string specifying the path to the directory containing the trained models to be evaluated. All models in this directory will be evaluated. Uses absolute paths.
 - `metrics`: A list of strings representing the names of evaluation metrics to be computed (e.g., "DCR", "NNDR", "JS").
 - `model_type`: A string indicating the type of synthetic data generator used (e.g., "ctgan", "tabddpm").
 - `dataset_name`: A string indicating the name of the dataset being used (e.g., "adult", "cardio", "churn").

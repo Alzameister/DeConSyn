@@ -7,7 +7,7 @@ device = "cpu"
 
 [deconsyn_params]
 dataset_name = "adult"
-data_root = "../../data/adult/"
+data_root = "data/adult/"
 categorical_columns = [
         "workclass",
         "education",
@@ -20,9 +20,9 @@ categorical_columns = [
 ]
 target = "income"
 
-n = 3
+n = 4
 epochs = 30
-iterations = 1000
+iterations = 300
 topology = "ring"
 k = 4
 p = 0.1

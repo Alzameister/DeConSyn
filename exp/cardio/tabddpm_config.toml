@@ -8,7 +8,7 @@ log_level = "info"
 
 [deconsyn_params]
 dataset_name = "cardio"
-data_root = "../../data/cardio/"
+data_root = "data/cardio/"
 categorical_columns = [
     "gender",
     "cholesterol",

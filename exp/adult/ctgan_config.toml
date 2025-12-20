@@ -2,7 +2,7 @@ seed=42
 
 [deconsyn_params]
 dataset_name = "adult"
-data_root = "../../data/adult/"
+data_root = "data/adult/"
 categorical_columns = [
         "workclass",
         "education",

@@ -2,7 +2,7 @@ seed=42
 
 [deconsyn_params]
 dataset_name = "churn"
-data_root = "../../data/churn/"
+data_root = "data/churn/"
 categorical_columns = [
     'Geography',
     'Gender',
